@@ -209,6 +209,7 @@ class KitchenScene extends Phaser.Scene {
     this.load.image("ingredient_sauce", "assets/ingredients/sauce.png");
     this.load.image("ingredient_olives", "assets/ingredients/olives.png");
     this.load.image("dough_base", "assets/ingredients/dough.png");
+    this.load.image("dough_baked", "assets/ingredients/dough-baked.png");
     this.load.image("ladle_cursor", "assets/ingredients/sauce_cursor.png");
     this.load.image("cheese_cursor", "assets/ingredients/cheese_cursor.png");
     this.load.image("cheese_sprinkle_1", "assets/ingredients/cheese1.png");
@@ -489,6 +490,7 @@ class KitchenScene extends Phaser.Scene {
     return layers;
   }
 
+  // Custom cursor for sauce ladle.
   createLadleCursor(ui) {
     const ladle = this.add.image(0, 0, "ladle_cursor");
     ladle.setOrigin(0, 1);
@@ -692,6 +694,7 @@ class KitchenScene extends Phaser.Scene {
     });
   }
 
+  // Capture pizza snapshot and animate on conveyor belt.
   sendPizzaToOven() {
     if (!this.isPizzaOnBench) {
       return;
@@ -706,23 +709,31 @@ class KitchenScene extends Phaser.Scene {
     const localY = (bounds.y - this.ui.y) / this.ui.scaleY;
     const width = Math.ceil(bounds.width / this.ui.scaleX);
     const height = Math.ceil(bounds.height / this.ui.scaleY);
-    const snapshot = this.add.renderTexture(0, 0, width, height);
-    snapshot.draw(this.pizzaContainer, -localX, -localY);
-    snapshot.setOrigin(0, 0);
-    snapshot.setPosition(0, 0);
+    const wasDoughVisible = this.dough.visible;
+    this.dough.setVisible(false);
+    const toppingsSnapshot = this.add.renderTexture(0, 0, width, height);
+    toppingsSnapshot.draw(this.pizzaContainer, -localX, -localY);
+    toppingsSnapshot.setOrigin(0, 0);
+    toppingsSnapshot.setPosition(0, 0);
+    this.dough.setVisible(wasDoughVisible);
 
-    // dough overlay for color change
-    const doughOverlay = this.add.renderTexture(0, 0, width, height);
-    doughOverlay.draw(this.dough, -localX, -localY);
-    doughOverlay.setOrigin(0, 0);
-    doughOverlay.setPosition(0, 0);
-    doughOverlay.setTint(0xffffff);
-    doughOverlay.setBlendMode(Phaser.BlendModes.MULTIPLY);
+    const doughOffsetX = this.dough.x - localX;
+    const doughOffsetY = this.dough.y - localY;
+    const doughWidth = this.dough.displayWidth;
+    const doughHeight = this.dough.displayHeight;
 
+    const rawDough = this.add.image(doughOffsetX, doughOffsetY, "dough_base");
+    rawDough.setDisplaySize(doughWidth, doughHeight);
+
+    const bakedDough = this.add.image(doughOffsetX, doughOffsetY, "dough_baked");
+    bakedDough.setDisplaySize(doughWidth, doughHeight);
+    bakedDough.setAlpha(0);
+
+    // place it on the belt
     const beltScale = 0.55;
-    const beltPizza = this.add.container(350, 250);
+    const beltPizza = this.add.container(350, 245);
     beltPizza.setScale(beltScale);
-    beltPizza.add([snapshot, doughOverlay]);
+    beltPizza.add([rawDough, bakedDough, toppingsSnapshot]);
     this.ui.add(beltPizza);
 
     // shaking effect
@@ -739,12 +750,14 @@ class KitchenScene extends Phaser.Scene {
       });
     });
 
-    // animation on conveyor belt
+    // travel on conveyor belt
+    const travelDelay = 1000;
+    const travelDuration = 7000;
     this.tweens.add({
       targets: beltPizza,
       x: 1220,
-      duration: 7000,
-      delay: 1000,
+      duration: travelDuration,
+      delay: travelDelay,
       ease: "Sine.easeInOut",
       onComplete: () => {
         if (shakeTween) {
@@ -754,8 +767,8 @@ class KitchenScene extends Phaser.Scene {
       },
     });
 
-    // baking effect
-    const bakeStartDelay = 1000 + 1600;
+    // color change baking effect for toppings
+    const bakeStartDelay = travelDelay + 1600;
     const bakeDuration = 4900;
     this.tweens.addCounter({
       from: 0,
@@ -771,27 +784,26 @@ class KitchenScene extends Phaser.Scene {
           1,
           value
         );
-        snapshot.setTint(Phaser.Display.Color.GetColor(color.r, color.g, color.b));
+        toppingsSnapshot.setTint(Phaser.Display.Color.GetColor(color.r, color.g, color.b));
       },
     });
 
-    // color change for dough
-    this.tweens.addCounter({
-      from: 0,
-      to: 1,
-      duration: bakeDuration,
-      delay: bakeStartDelay,
+    // dough swap effect
+    const doughSwapDelay = travelDelay + Math.round(travelDuration * 0.4);
+    const doughSwapDuration = 1200;
+    this.tweens.add({
+      targets: rawDough,
+      alpha: 0,
+      duration: doughSwapDuration,
+      delay: doughSwapDelay,
       ease: "Sine.easeInOut",
-      onUpdate: (tween) => {
-        const value = tween.getValue();
-        const color = Phaser.Display.Color.Interpolate.ColorWithColor(
-          { r: 255, g: 255, b: 255 },
-          { r: 160, g: 80, b: 65 },
-          1,
-          value
-        );
-        doughOverlay.setTint(Phaser.Display.Color.GetColor(color.r, color.g, color.b));
-      },
+    });
+    this.tweens.add({
+      targets: bakedDough,
+      alpha: 1,
+      duration: doughSwapDuration,
+      delay: doughSwapDelay,
+      ease: "Sine.easeInOut",
     });
 
     this.pizzaContainer.setVisible(false);
