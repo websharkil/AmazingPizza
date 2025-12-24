@@ -227,6 +227,7 @@ class KitchenScene extends Phaser.Scene {
     const ui = this.add.container(0, 0);
     applyCoverLayout(this, bg, ui);
     this.ui = ui;
+    this.isPizzaOnBench = true;
 
     const ingredientY = 507;
     const ingredientX = [110, 260, 420];
@@ -239,17 +240,30 @@ class KitchenScene extends Phaser.Scene {
       icon.setScale(ingredientSize / icon.width);
       ui.add(icon);
       ingredientIcons[key] = icon;
+      this.attachHoverCursorReset(icon);
     });
+
+    this.pizzaContainer = this.add.container(0, 0);
+    ui.add(this.pizzaContainer);
 
     const dough = this.add.image(878, 658, "dough_base");
     const doughSize = 464;
     dough.setScale(doughSize / dough.width);
-    ui.add(dough);
+    this.pizzaContainer.add(dough);
+    this.dough = dough;
 
     this.doughBounds = this.getSauceBounds(dough);
     this.setupSauceInteraction(ui, dough, ingredientIcons["ingredient_sauce"]);
     this.setupSprinkleInteractions(ui, ingredientIcons);
+
+    this.scale.on("resize", () => {
+      this.doughBounds = this.getSauceBounds(this.dough);
+    });
+
+    this.ovenButton = this.createOvenButton();
+    ui.add(this.ovenButton);
   }
+
 
   update() {
     // Game loop updates will go here.
@@ -262,13 +276,16 @@ class KitchenScene extends Phaser.Scene {
     this.sauceBlobSize = 36;
     this.sauceIconRef = sauceIcon;
 
-    this.sauceLayers = this.createSauceLayers(ui, dough);
+    this.sauceLayers = this.createSauceLayers(dough);
     this.sauceLayerIndex = 0;
     this.sauceStamp = this.make.graphics({ x: 0, y: 0, add: false });
     this.ladleCursor = this.createLadleCursor(ui);
 
     sauceIcon.setInteractive({ useHandCursor: true });
     sauceIcon.on("pointerdown", (pointer) => {
+      if (!this.isPizzaOnBench) {
+        return;
+      }
       if (this.sauceActive) {
         this.deactivateSauce();
         return;
@@ -285,7 +302,7 @@ class KitchenScene extends Phaser.Scene {
     });
 
     this.input.on("pointerdown", (pointer) => {
-      if (!this.sauceActive) {
+      if (!this.sauceActive || !this.isPizzaOnBench) {
         return;
       }
       const local = this.toUiLocal(ui, pointer);
@@ -299,7 +316,7 @@ class KitchenScene extends Phaser.Scene {
     });
 
     this.input.on("pointermove", (pointer) => {
-      if (!this.sauceActive) {
+      if (!this.sauceActive || !this.isPizzaOnBench) {
         return;
       }
       const local = this.toUiLocal(ui, pointer);
@@ -355,6 +372,9 @@ class KitchenScene extends Phaser.Scene {
     this.sprinkleConfigs.forEach((config) => {
       config.icon.setInteractive({ useHandCursor: true });
       config.icon.on("pointerdown", (pointer) => {
+        if (!this.isPizzaOnBench) {
+          return;
+        }
         if (this.sprinkleActive && this.sprinkleIconRef === config.icon) {
           this.deactivateSprinkle();
           return;
@@ -366,7 +386,7 @@ class KitchenScene extends Phaser.Scene {
     });
 
     this.input.on("pointerdown", (pointer) => {
-      if (!this.sprinkleActive) {
+      if (!this.sprinkleActive || !this.isPizzaOnBench) {
         return;
       }
       const local = this.toUiLocal(ui, pointer);
@@ -380,7 +400,7 @@ class KitchenScene extends Phaser.Scene {
     });
 
     this.input.on("pointermove", (pointer) => {
-      if (!this.sprinkleActive) {
+      if (!this.sprinkleActive || !this.isPizzaOnBench) {
         return;
       }
       const local = this.toUiLocal(ui, pointer);
@@ -453,7 +473,7 @@ class KitchenScene extends Phaser.Scene {
   }
 
   // Render texture layers for sauce buildup.
-  createSauceLayers(ui, dough) {
+  createSauceLayers(dough) {
     const size = Math.max(dough.displayWidth, dough.displayHeight);
     const alphas = [0.4, 0.6, 0.8];
     const layers = [];
@@ -462,7 +482,7 @@ class KitchenScene extends Phaser.Scene {
       const layer = this.add.renderTexture(dough.x, dough.y, size, size);
       layer.setOrigin(0.5, 0.5);
       layer.setAlpha(alpha);
-      ui.add(layer);
+      this.pizzaContainer.add(layer);
       layers.push(layer);
     });
 
@@ -524,18 +544,16 @@ class KitchenScene extends Phaser.Scene {
 
   // Convert dough image coordinates into scene space for hit testing.
   getSauceBounds(dough) {
-    const baseCenter = { x: 516, y: 467.5 };
-    const baseRadii = { rx: 329, ry: 188.5 };
-    const scaleX = dough.displayWidth / dough.width;
-    const scaleY = dough.displayHeight / dough.height;
-    const offsetX = (baseCenter.x - dough.width * 0.5) * scaleX;
-    const offsetY = (baseCenter.y - dough.height * 0.5) * scaleY;
+    const centerXRatio = 0.5;
+    const centerYRatio = 0.51;
+    const radiusXRatio = 0.32;
+    const radiusYRatio = 0.18;
 
     return {
-      cx: dough.x + offsetX,
-      cy: dough.y + offsetY,
-      rx: baseRadii.rx * scaleX,
-      ry: baseRadii.ry * scaleY,
+      cx: dough.x + (centerXRatio - 0.5) * dough.displayWidth,
+      cy: dough.y + (centerYRatio - 0.5) * dough.displayHeight-20,
+      rx: dough.displayWidth * radiusXRatio,
+      ry: dough.displayHeight * radiusYRatio,
     };
   }
 
@@ -560,7 +578,7 @@ class KitchenScene extends Phaser.Scene {
     this.addHerbSpeckles(stamp, stampW, stampH);
 
     const layer = this.sauceLayers[this.sauceLayerIndex];
-    this.ui.bringToTop(layer);
+    this.pizzaContainer.bringToTop(layer);
     layer.draw(stamp, drawX, drawY);
     this.sauceLayerIndex = (this.sauceLayerIndex + 1) % this.sauceLayers.length;
   }
@@ -577,8 +595,8 @@ class KitchenScene extends Phaser.Scene {
     const sprinkle = this.add.image(x, y, key);
     sprinkle.setScale(this.sprinkleConfig.sprinkleWidth / sprinkle.width);
     sprinkle.setRotation(Phaser.Math.FloatBetween(-0.4, 0.4));
-    this.ui.add(sprinkle);
-    this.ui.bringToTop(sprinkle);
+    this.pizzaContainer.add(sprinkle);
+    this.pizzaContainer.bringToTop(sprinkle);
   }
 
   // Slightly vary sauce color for a natural look.
@@ -608,6 +626,181 @@ class KitchenScene extends Phaser.Scene {
       stamp.fillCircle(sx, sy, size);
     }
   }
+
+  createOvenButton() {
+    const buttonWidth = 260;
+    const buttonHeight = 90;
+    const x = 735;
+    const y = 860;
+    const button = this.add.graphics();
+    button.fillStyle(0xffb347, 1);
+    button.lineStyle(4, 0x5b3a1c, 1);
+    button.fillRoundedRect(x - buttonWidth / 2, y - buttonHeight / 2, buttonWidth, buttonHeight, 18);
+    button.strokeRoundedRect(x - buttonWidth / 2, y - buttonHeight / 2, buttonWidth, buttonHeight, 18);
+
+    const label = this.add
+      .text(x, y, "To the oven", {
+        fontFamily: "Arial, sans-serif",
+        fontSize: "22px",
+        color: "#5b3a1c",
+      })
+      .setOrigin(0.5, 0.5);
+
+    const hitArea = new Phaser.Geom.Rectangle(
+      x - buttonWidth / 2,
+      y - buttonHeight / 2,
+      buttonWidth,
+      buttonHeight
+    );
+
+    button.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains).on("pointerdown", () => {
+      this.sendPizzaToOven();
+    });
+    this.attachHoverCursorReset(button);
+
+    return this.add.container(0, 0, [button, label]);
+  }
+
+  attachHoverCursorReset(target) {
+    target.on("pointerover", () => {
+      if (!this.sauceActive && !this.sprinkleActive) {
+        return;
+      }
+      this.input.setDefaultCursor("default");
+      if (this.ladleCursor) {
+        this.ladleCursor.setVisible(false);
+      }
+      if (this.sprinkleCursor) {
+        this.sprinkleCursor.setVisible(false);
+      }
+    });
+
+    target.on("pointerout", () => {
+      if (this.sauceActive) {
+        this.input.setDefaultCursor("none");
+        if (this.ladleCursor) {
+          this.ladleCursor.setVisible(true);
+        }
+        return;
+      }
+      if (this.sprinkleActive) {
+        this.input.setDefaultCursor("none");
+        if (this.sprinkleCursor) {
+          this.sprinkleCursor.setVisible(true);
+        }
+      }
+    });
+  }
+
+  sendPizzaToOven() {
+    if (!this.isPizzaOnBench) {
+      return;
+    }
+    this.isPizzaOnBench = false;
+    this.deactivateSauce();
+    this.deactivateSprinkle();
+
+    // create snapshot of pizza
+    const bounds = this.pizzaContainer.getBounds();
+    const localX = (bounds.x - this.ui.x) / this.ui.scaleX;
+    const localY = (bounds.y - this.ui.y) / this.ui.scaleY;
+    const width = Math.ceil(bounds.width / this.ui.scaleX);
+    const height = Math.ceil(bounds.height / this.ui.scaleY);
+    const snapshot = this.add.renderTexture(0, 0, width, height);
+    snapshot.draw(this.pizzaContainer, -localX, -localY);
+    snapshot.setOrigin(0, 0);
+    snapshot.setPosition(0, 0);
+
+    // dough overlay for color change
+    const doughOverlay = this.add.renderTexture(0, 0, width, height);
+    doughOverlay.draw(this.dough, -localX, -localY);
+    doughOverlay.setOrigin(0, 0);
+    doughOverlay.setPosition(0, 0);
+    doughOverlay.setTint(0xffffff);
+    doughOverlay.setBlendMode(Phaser.BlendModes.MULTIPLY);
+
+    const beltScale = 0.55;
+    const beltPizza = this.add.container(350, 250);
+    beltPizza.setScale(beltScale);
+    beltPizza.add([snapshot, doughOverlay]);
+    this.ui.add(beltPizza);
+
+    // shaking effect
+    const startY = beltPizza.y;
+    let shakeTween = null;
+    this.time.delayedCall(2000, () => {
+      shakeTween = this.tweens.add({
+        targets: beltPizza,
+        y: startY + 2,
+        duration: 260,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut",
+      });
+    });
+
+    // animation on conveyor belt
+    this.tweens.add({
+      targets: beltPizza,
+      x: 1220,
+      duration: 7000,
+      delay: 1000,
+      ease: "Sine.easeInOut",
+      onComplete: () => {
+        if (shakeTween) {
+          shakeTween.stop();
+        }
+        beltPizza.setY(startY);
+      },
+    });
+
+    // baking effect
+    const bakeStartDelay = 1000 + 1600;
+    const bakeDuration = 4900;
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: bakeDuration,
+      delay: bakeStartDelay,
+      ease: "Sine.easeInOut",
+      onUpdate: (tween) => {
+        const value = tween.getValue();
+        const color = Phaser.Display.Color.Interpolate.ColorWithColor(
+          { r: 255, g: 255, b: 255 },
+          { r: 140, g: 120, b: 100 },
+          1,
+          value
+        );
+        snapshot.setTint(Phaser.Display.Color.GetColor(color.r, color.g, color.b));
+      },
+    });
+
+    // color change for dough
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: bakeDuration,
+      delay: bakeStartDelay,
+      ease: "Sine.easeInOut",
+      onUpdate: (tween) => {
+        const value = tween.getValue();
+        const color = Phaser.Display.Color.Interpolate.ColorWithColor(
+          { r: 255, g: 255, b: 255 },
+          { r: 160, g: 80, b: 65 },
+          1,
+          value
+        );
+        doughOverlay.setTint(Phaser.Display.Color.GetColor(color.r, color.g, color.b));
+      },
+    });
+
+    this.pizzaContainer.setVisible(false);
+    this.pizzaContainer.setActive(false);
+    if (this.ovenButton) {
+      this.ovenButton.setVisible(false);
+      this.ovenButton.setActive(false);
+    }
+  }
 }
 
 // #endregion
@@ -623,7 +816,8 @@ const config = {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [CounterScene, KitchenScene],
+  //scene: [CounterScene, KitchenScene],
+  scene: [KitchenScene],
 };
 
 new Phaser.Game(config);
