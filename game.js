@@ -1,6 +1,7 @@
 // #region Config and Globals
 const GAME_WIDTH = 1024;
 const GAME_HEIGHT = 768;
+const DEBUG_START_BAKED_CUT = true; // Set to false to use the normal flow.
 
 const INGREDIENTS = [
   "olives",
@@ -221,6 +222,7 @@ class KitchenScene extends Phaser.Scene {
     this.load.image("olives_sprinkle_2", "assets/ingredients/olives2.png");
     this.load.image("olives_sprinkle_3", "assets/ingredients/olives3.png");
     this.load.image("olives_sprinkle_4", "assets/ingredients/olives4.png");
+    this.load.image("cutter_tool", "assets/ingredients/cutter.png");
   }
 
   create() {
@@ -263,6 +265,18 @@ class KitchenScene extends Phaser.Scene {
 
     this.ovenButton = this.createOvenButton();
     ui.add(this.ovenButton);
+
+    this.cutterPickedUp = false;
+    this.returnedPizzaReady = false;
+    this.cutterTool = this.createCutterTool();
+    this.cutterCursor = this.createCutterCursor();
+    this.cutGuides = this.createCutGuides();
+    this.setupCutterInput();
+    this.cutterAnimating = false;
+
+    if (DEBUG_START_BAKED_CUT) {
+      this.startDebugBakedPizza();
+    }
   }
 
 
@@ -663,6 +677,332 @@ class KitchenScene extends Phaser.Scene {
     return this.add.container(0, 0, [button, label]);
   }
 
+  //#region Pizza cutter
+  createCutterTool() {
+    const targetWidth = 140;
+    const tool = this.add.image(1160, 610, "cutter_tool");
+    tool.setScale(targetWidth / tool.width);
+    tool.setVisible(false);
+    tool.setActive(false);
+    tool.setInteractive({ useHandCursor: true });
+    tool.disableInteractive();
+    tool.on("pointerdown", (pointer) => {
+      this.pickUpCutter(pointer);
+    });
+    this.ui.add(tool);
+    return tool;
+  }
+
+  createCutterCursor() {
+    const targetWidth = 140;
+    const cursor = this.add.image(0, 0, "cutter_tool");
+    cursor.setOrigin(0.1, 0.5);
+    cursor.setScale(targetWidth / cursor.width);
+    cursor.setVisible(false);
+    cursor.setDepth(1200);
+    this.ui.add(cursor);
+    return cursor;
+  }
+
+  setupCutterInput() {
+    this.input.on("pointermove", (pointer) => {
+      if (!this.cutterPickedUp) {
+        return;
+      }
+      if (this.cutterAnimating) {
+        return;
+      }
+      const local = this.toUiLocal(this.ui, pointer);
+      this.cutterCursor.setPosition(local.x, local.y);
+      this.ui.bringToTop(this.cutterCursor);
+
+      if (!this.returnedPizzaReady || !this.isPointerOnReturnedPizza(local.x, local.y)) {
+        this.hideCutGuides();
+        return;
+      }
+
+      const index = this.pickCutGuideIndex(local.x, local.y);
+      this.showCutGuide(index);
+    });
+
+    this.input.on("pointerdown", (pointer) => {
+      if (!this.cutterPickedUp) {
+        return;
+      }
+      const local = this.toUiLocal(this.ui, pointer);
+      if (!this.returnedPizzaReady || !this.isPointerOnReturnedPizza(local.x, local.y)) {
+        return;
+      }
+      const index = this.pickCutGuideIndex(local.x, local.y);
+      if (index === -1) {
+        return;
+      }
+      if (this.cutterAnimating) {
+        return;
+      }
+      this.playCutAnimation(index);
+    });
+  }
+
+  pickUpCutter(pointer) {
+    if (!this.cutterTool || !this.cutterTool.visible) {
+      return;
+    }
+    this.cutterPickedUp = true;
+    this.cutterTool.setVisible(false);
+    this.cutterTool.setActive(false);
+    this.cutterTool.disableInteractive();
+    this.input.setDefaultCursor("none");
+    this.cutterCursor.setVisible(true);
+    const local = this.toUiLocal(this.ui, pointer);
+    this.cutterCursor.setPosition(local.x, local.y);
+    this.ui.bringToTop(this.cutterCursor);
+  }
+
+  showCutterTool() {
+    if (!this.cutterTool || this.cutterPickedUp) {
+      return;
+    }
+    this.cutterTool.setVisible(true);
+    this.cutterTool.setActive(true);
+    this.cutterTool.setInteractive({ useHandCursor: true });
+    this.ui.bringToTop(this.cutterTool);
+  }
+
+  createCutGuides() {
+    const angles = [Math.PI / 2, Math.PI / 6, -Math.PI / 6];
+    return angles.map((angle) => {
+      const guide = this.add.graphics();
+      guide.setVisible(false);
+      guide.setDepth(900);
+      this.ui.add(guide);
+      return { guide, angle, available: true, used: false };
+    });
+  }
+
+  updateCutGuideLayout() {
+    if (!this.returnedPizza || !this.returnedDough) {
+      return;
+    }
+    const centerX = this.returnedPizza.x + this.returnedDough.x;
+    const centerY = this.returnedPizza.y + this.returnedDough.y;
+    this.cutGuides.forEach((entry) => {
+      const length = this.getGuideLength(entry.angle);
+      entry.guide.clear();
+      if (entry.used) {
+        entry.guide.lineStyle(6, 0x2f2517, 0.95);
+        this.drawSolidLine(entry.guide, length);
+      } else {
+        entry.guide.lineStyle(4, 0xffffff, 0.9);
+        this.drawDashedLine(entry.guide, length, 18, 12);
+      }
+      entry.guide.setPosition(centerX, centerY);
+      entry.guide.setRotation(entry.angle);
+    });
+  }
+
+  showCutGuide(index) {
+    if (index === -1 || !this.cutGuides[index] || !this.cutGuides[index].available) {
+      this.hideCutGuides();
+      return;
+    }
+    this.cutGuides.forEach((entry, idx) => {
+      if (entry.used) {
+        entry.guide.setVisible(true);
+        return;
+      }
+      entry.guide.setVisible(entry.available && idx === index);
+      if (idx === index && entry.available) {
+        this.ui.bringToTop(entry.guide);
+      }
+    });
+  }
+
+  hideCutGuides() {
+    this.cutGuides.forEach((entry) => {
+      if (!entry.used) {
+        entry.guide.setVisible(false);
+      }
+    });
+  }
+
+  pickCutGuideIndex(x, y) {
+    const centerX = this.returnedPizza.x + this.returnedDough.x;
+    const centerY = this.returnedPizza.y + this.returnedDough.y;
+    const angle = Phaser.Math.Angle.Normalize(Phaser.Math.Angle.Between(centerX, centerY, x, y));
+    const candidates = [Math.PI / 2, Math.PI / 3, (2 * Math.PI) / 3];
+    let bestIndex = -1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    candidates.forEach((candidate, index) => {
+      if (!this.cutGuides[index] || !this.cutGuides[index].available) {
+        return;
+      }
+      const forward = Math.abs(Phaser.Math.Angle.ShortestBetween(angle, candidate));
+      const flipped = Math.abs(
+        Phaser.Math.Angle.ShortestBetween(angle, Phaser.Math.Angle.Normalize(candidate + Math.PI))
+      );
+      const distance = Math.min(forward, flipped);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    });
+
+    return bestIndex;
+  }
+
+  isPointerOnReturnedPizza(x, y) {
+    if (!this.returnedPizza || !this.returnedDough) {
+      return false;
+    }
+    const centerX = this.returnedPizza.x + this.returnedDough.x;
+    const centerY = this.returnedPizza.y + this.returnedDough.y;
+    const rx = this.returnedDough.displayWidth * 0.48;
+    const ry = this.returnedDough.displayHeight * 0.32;
+    const ellipse = new Phaser.Geom.Ellipse(centerX, centerY, rx * 2, ry * 2);
+    return Phaser.Geom.Ellipse.Contains(ellipse, x, y);
+  }
+
+  drawDashedLine(graphics, length, dashLength, gapLength) {
+    const half = length * 0.5;
+    let x = -half;
+    graphics.beginPath();
+    while (x < half) {
+      const dashEnd = Math.min(x + dashLength, half);
+      graphics.moveTo(x, 0);
+      graphics.lineTo(dashEnd, 0);
+      x = dashEnd + gapLength;
+    }
+    graphics.strokePath();
+  }
+
+  drawSolidLine(graphics, length) {
+    graphics.strokeLineShape(new Phaser.Geom.Line(-length / 2, 0, length / 2, 0));
+  }
+
+  getGuideLength(angle) {
+    const rx = this.returnedDough.displayWidth * 0.48;
+    const ry = this.returnedDough.displayHeight * 0.32;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const denom = Math.sqrt((cos * cos) / (rx * rx) + (sin * sin) / (ry * ry));
+    if (!denom) {
+      return this.returnedDough.displayWidth * 0.9;
+    }
+    return (2 / denom) * 0.9;
+  }
+
+  markGuideUsed(index) {
+    const entry = this.cutGuides[index];
+    if (!entry || entry.used) {
+      return;
+    }
+    entry.available = false;
+    entry.used = true;
+    entry.guide.clear();
+    entry.guide.lineStyle(6, 0xe37827, 0.95);
+    this.drawSolidLine(entry.guide, this.getGuideLength(entry.angle));
+    entry.guide.setPosition(this.returnedPizza.x + this.returnedDough.x, this.returnedPizza.y + this.returnedDough.y);
+    entry.guide.setRotation(entry.angle);
+    entry.guide.setVisible(true);
+    this.ui.bringToTop(entry.guide);
+  }
+
+  playCutAnimation(index) {
+    const entry = this.cutGuides[index];
+    if (!entry || entry.used || !this.returnedPizza || !this.returnedDough) {
+      return;
+    }
+    this.cutterAnimating = true;
+    this.cutterCursor.setVisible(false);
+
+    const length = this.getGuideLength(entry.angle);
+    const centerX = this.returnedPizza.x + this.returnedDough.x;
+    const centerY = this.returnedPizza.y + this.returnedDough.y;
+    const dirX = Math.cos(entry.angle);
+    const dirY = Math.sin(entry.angle);
+    const startX = centerX - dirX * (length * 0.5);
+    const startY = centerY - dirY * (length * 0.5);
+    const endX = centerX + dirX * (length * 0.5);
+    const endY = centerY + dirY * (length * 0.5);
+
+    const prevOriginX = this.cutterCursor.originX;
+    const prevOriginY = this.cutterCursor.originY;
+    const prevRotation = this.cutterCursor.rotation;
+
+    this.cutterCursor.setOrigin(0, 1);
+    this.cutterCursor.setRotation(entry.angle);
+    this.cutterCursor.setPosition(startX, startY);
+    this.cutterCursor.setVisible(true);
+    this.ui.bringToTop(this.cutterCursor);
+
+    this.tweens.add({
+      targets: this.cutterCursor,
+      x: endX,
+      y: endY,
+      duration: 500,
+      ease: "Sine.easeInOut",
+      onComplete: () => {
+        this.cutterCursor.setOrigin(prevOriginX, prevOriginY);
+        this.cutterCursor.setRotation(prevRotation);
+        const pointer = this.input.activePointer;
+        const local = this.toUiLocal(this.ui, pointer);
+        this.cutterCursor.setPosition(local.x, local.y);
+        this.cutterCursor.setVisible(true);
+        this.cutterAnimating = false;
+        this.markGuideUsed(index);
+      },
+    });
+  }
+
+
+  startDebugBakedPizza() {
+    this.isPizzaOnBench = false;
+    this.deactivateSauce();
+    this.deactivateSprinkle();
+
+    const bounds = this.pizzaContainer.getBounds();
+    const localX = (bounds.x - this.ui.x) / this.ui.scaleX;
+    const localY = (bounds.y - this.ui.y) / this.ui.scaleY;
+    const width = Math.ceil(bounds.width / this.ui.scaleX);
+    const height = Math.ceil(bounds.height / this.ui.scaleY);
+    const wasDoughVisible = this.dough.visible;
+    this.dough.setVisible(false);
+    const toppingsSnapshot = this.add.renderTexture(0, 0, width, height);
+    toppingsSnapshot.draw(this.pizzaContainer, -localX, -localY);
+    toppingsSnapshot.setOrigin(0, 0);
+    toppingsSnapshot.setPosition(0, 0);
+    this.dough.setVisible(wasDoughVisible);
+    toppingsSnapshot.setTint(Phaser.Display.Color.GetColor(140, 120, 100));
+
+    const doughOffsetX = this.dough.x - localX;
+    const doughOffsetY = this.dough.y - localY;
+    const doughWidth = this.dough.displayWidth;
+    const doughHeight = this.dough.displayHeight;
+
+    const bakedDough = this.add.image(doughOffsetX, doughOffsetY, "dough_baked");
+    bakedDough.setDisplaySize(doughWidth, doughHeight);
+
+    const bakedPizza = this.add.container(localX, localY);
+    bakedPizza.add([bakedDough, toppingsSnapshot]);
+    this.ui.add(bakedPizza);
+
+    this.returnedPizza = bakedPizza;
+    this.returnedDough = bakedDough;
+    this.returnedPizzaReady = true;
+    this.updateCutGuideLayout();
+    this.showCutterTool();
+
+    this.pizzaContainer.setVisible(false);
+    this.pizzaContainer.setActive(false);
+    if (this.ovenButton) {
+      this.ovenButton.setVisible(false);
+      this.ovenButton.setActive(false);
+    }
+  }
+  //#endregion
+
   attachHoverCursorReset(target) {
     target.on("pointerover", () => {
       if (!this.sauceActive && !this.sprinkleActive) {
@@ -719,6 +1059,8 @@ class KitchenScene extends Phaser.Scene {
 
     const doughOffsetX = this.dough.x - localX;
     const doughOffsetY = this.dough.y - localY;
+    const benchX = localX;
+    const benchY = localY;
     const doughWidth = this.dough.displayWidth;
     const doughHeight = this.dough.displayHeight;
 
@@ -735,6 +1077,9 @@ class KitchenScene extends Phaser.Scene {
     beltPizza.setScale(beltScale);
     beltPizza.add([rawDough, bakedDough, toppingsSnapshot]);
     this.ui.add(beltPizza);
+    this.returnedPizza = beltPizza;
+    this.returnedDough = bakedDough;
+    this.returnedPizzaReady = false;
 
     // shaking effect
     const startY = beltPizza.y;
@@ -764,6 +1109,28 @@ class KitchenScene extends Phaser.Scene {
           shakeTween.stop();
         }
         beltPizza.setY(startY);
+        const fadeHalf = 500;
+        this.tweens.add({
+          targets: beltPizza,
+          alpha: 0,
+          duration: fadeHalf,
+          ease: "Sine.easeInOut",
+          onComplete: () => {
+            beltPizza.setScale(1);
+            beltPizza.setPosition(benchX, benchY);
+            this.tweens.add({
+              targets: beltPizza,
+              alpha: 1,
+              duration: fadeHalf,
+              ease: "Sine.easeInOut",
+              onComplete: () => {
+                this.returnedPizzaReady = true;
+                this.updateCutGuideLayout();
+                this.showCutterTool();
+              },
+            });
+          },
+        });
       },
     });
 
