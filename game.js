@@ -13,6 +13,7 @@ const INGREDIENTS = [
   "spinach",
   "pineapple"
 ];
+const ENABLED_INGREDIENTS = ["sauce", "cheese", "olives"];
 
 const GameState = {
   currentCustomer: null,
@@ -97,18 +98,42 @@ class CounterScene extends Phaser.Scene {
   // Random order of 1-4 ingredients.
   getRandomOrder() {
     const count = Phaser.Math.Between(1, 4);
-    const pool = Phaser.Utils.Array.Shuffle([...INGREDIENTS]);
+    const pool = Phaser.Utils.Array.Shuffle([...ENABLED_INGREDIENTS]);
     return pool.slice(0, count);
   }
 
-  // Draw a speech bubble with ingredient icons.
+  // Draw a speech bubble with a colored ingredient sentence.
   createSpeechBubble(customer, ingredients) {
-    const bubbleWidth = Math.max(160, ingredients.length * 80);
-    const bubbleHeight = 110;
+    const fontSize = 26;
+    const paddingX = 24;
+    const paddingY = 18;
     const x = customer.x + customer.displayWidth * 0.2;
-    const y = customer.y - customer.displayHeight * 0.5 - bubbleHeight * 0.6;
+    const y = customer.y - customer.displayHeight * 0.5 - 70;
     const bubbleContainer = this.add.container(0, 0);
     const bubble = this.add.graphics();
+
+    const parts = [];
+    parts.push({ text: "Hi, I'd like a pizza with ", color: "#2f2517" });
+    ingredients.forEach((ingredient, index) => {
+      if (index > 0) {
+        const separator = index === ingredients.length - 1 ? " and " : ", ";
+        parts.push({ text: separator, color: "#2f2517" });
+      }
+      const color = Phaser.Display.Color.IntegerToColor(this.getIngredientColor(ingredient)).rgba;
+      parts.push({ text: ingredient, color });
+    });
+
+    const textObjects = parts.map((part) =>
+      this.add.text(0, 0, part.text, {
+        fontFamily: "Arial, sans-serif",
+        fontSize: `${fontSize}px`,
+        fontWeight: "bold",
+        color: part.color,
+      })
+    );
+    const totalWidth = textObjects.reduce((sum, text) => sum + text.width, 0);
+    const bubbleWidth = Math.max(240, totalWidth + paddingX * 2);
+    const bubbleHeight = fontSize + paddingY * 2;
 
     bubble.lineStyle(4, 0x6b4c2a, 1);
     bubble.fillStyle(0xffffff, 0.95);
@@ -124,24 +149,12 @@ class CounterScene extends Phaser.Scene {
 
     bubbleContainer.add(bubble);
 
-    const iconSpacing = 70;
-    const startX = x - ((ingredients.length - 1) * iconSpacing) / 2;
-    const iconY = y + 5;
-
-    ingredients.forEach((ingredient, index) => {
-      const iconX = startX + index * iconSpacing;
-      const color = this.getIngredientColor(ingredient);
-      const circle = this.add.circle(iconX, iconY, 20, color, 1).setStrokeStyle(3, 0xffffff, 1);
-      const label = this.add
-        .text(iconX, iconY + 1, ingredient.slice(0, 3).toUpperCase(), {
-          fontFamily: "Arial, sans-serif",
-          fontSize: "12px",
-          color: "#2f2517",
-          align: "center",
-        })
-        .setOrigin(0.5, 0.5);
-      bubbleContainer.add(circle);
-      bubbleContainer.add(label);
+    let textX = x - totalWidth / 2;
+    textObjects.forEach((text) => {
+      text.setOrigin(0, 0.5);
+      text.setPosition(textX, y);
+      bubbleContainer.add(text);
+      textX += text.width;
     });
 
     return bubbleContainer;
@@ -149,16 +162,16 @@ class CounterScene extends Phaser.Scene {
 
   getIngredientColor(ingredient) {
     const colors = {
-      olives: 0x3b2f2f,
+      olives: 0x414363,
       sauce: 0xd1462f,
-      cheese: 0xf7d26a,
-      mushrooms: 0xc4b6a6,
+      cheese: 0xf3a81e,
+      mushrooms: 0xb96e50,
       peppers: 0x7cc36a,
       spinach: 0x3f8d4f,
       sausage: 0xc27b5b,
-      onions: 0xe6d6f0,
+      onions: 0xad4795,
       pepperoni: 0xd24a4a,
-      pineapple: 0xf6c84c,
+      pineapple: 0xf3a81e,
     };
     return colors[ingredient] || 0xcccccc;
   }
