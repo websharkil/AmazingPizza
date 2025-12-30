@@ -1,19 +1,17 @@
 // #region Config and Globals
 const GAME_WIDTH = 1024;
 const GAME_HEIGHT = 768;
-const DEBUG_START_BAKED_CUT = true; // Set to false to use the normal flow.
 
 const INGREDIENTS = [
-  "olives",
   "sauce",
   "cheese",
+  "olives",
   "mushrooms",
-  "peppers",
-  "spinach",
-  "sausage",
-  "onions",
   "pepperoni",
-  "pineapple",
+  "peppers",
+  "onions",
+  "spinach",
+  "pineapple"
 ];
 
 const GameState = {
@@ -46,6 +44,10 @@ function applyCoverLayout(scene, bgImage, uiContainer) {
   scene.scale.on("resize", (gameSize) => {
     resize(gameSize.width, gameSize.height);
   });
+}
+
+function frameIndex(row, col, cols = 4) {
+  return row * cols + col;
 }
 
 // #endregion
@@ -206,22 +208,19 @@ class KitchenScene extends Phaser.Scene {
 
   preload() {
     this.load.image("kitchen_bg", "assets/bg/kitchen_bg.png");
-    this.load.image("ingredient_cheese", "assets/ingredients/cheese.png");
-    this.load.image("ingredient_sauce", "assets/ingredients/sauce.png");
-    this.load.image("ingredient_olives", "assets/ingredients/olives.png");
+    this.load.spritesheet("bowls-sprite", "assets/ingredients/bowls-sprite.png", {
+      frameWidth: 320,
+      frameHeight: 230,
+    });
     this.load.image("dough_base", "assets/ingredients/dough.png");
     this.load.image("dough_baked", "assets/ingredients/dough-baked.png");
     this.load.image("ladle_cursor", "assets/ingredients/sauce_cursor.png");
     this.load.image("cheese_cursor", "assets/ingredients/cheese_cursor.png");
-    this.load.image("cheese_sprinkle_1", "assets/ingredients/cheese1.png");
-    this.load.image("cheese_sprinkle_2", "assets/ingredients/cheese2.png");
-    this.load.image("cheese_sprinkle_3", "assets/ingredients/cheese3.png");
-    this.load.image("cheese_sprinkle_4", "assets/ingredients/cheese4.png");
-    this.load.image("olives_cursor", "assets/ingredients/olives_cursor.png");
-    this.load.image("olives_sprinkle_1", "assets/ingredients/olives1.png");
-    this.load.image("olives_sprinkle_2", "assets/ingredients/olives2.png");
-    this.load.image("olives_sprinkle_3", "assets/ingredients/olives3.png");
-    this.load.image("olives_sprinkle_4", "assets/ingredients/olives4.png");
+    this.load.image("olives_cursor", "assets/ingredients/olives_cursor.png");    
+    this.load.spritesheet("sprinkle-sprite", "assets/ingredients/sprinkle-sprite.png", {
+      frameWidth: 190,
+      frameHeight: 90,
+    });
     this.load.image("cutter_tool", "assets/ingredients/cutter.png");
   }
 
@@ -232,17 +231,19 @@ class KitchenScene extends Phaser.Scene {
     this.ui = ui;
     this.isPizzaOnBench = true;
 
-    const ingredientY = 507;
-    const ingredientX = [110, 260, 420];
-    const ingredientKeys = ["ingredient_sauce", "ingredient_cheese", "ingredient_olives"];
-    const ingredientSize = 140;
-    const ingredientIcons = {};
+    // draw bowls
+    const bowlY = 507;
+    const bowlX = 110;
+    const bowlKeys = ["bowl_sauce", "bowl_cheese", "bowl_olives"];
+    const bowlFrames = bowlKeys.map((_, index) => frameIndex(0, index));
+    const bowlSize = 160;
+    const bowlIcons = {};
 
-    ingredientKeys.forEach((key, index) => {
-      const icon = this.add.image(ingredientX[index], ingredientY, key);
-      icon.setScale(ingredientSize / icon.width);
+    bowlKeys.forEach((key, index) => {
+      const icon = this.add.image(bowlX+bowlSize*index, bowlY, "bowls-sprite", bowlFrames[index]);
+      icon.setScale(bowlSize / icon.width);
       ui.add(icon);
-      ingredientIcons[key] = icon;
+      bowlIcons[key] = icon;
       this.attachHoverCursorReset(icon);
     });
 
@@ -256,8 +257,8 @@ class KitchenScene extends Phaser.Scene {
     this.dough = dough;
 
     this.doughBounds = this.getSauceBounds(dough);
-    this.setupSauceInteraction(ui, dough, ingredientIcons["ingredient_sauce"]);
-    this.setupSprinkleInteractions(ui, ingredientIcons);
+    this.setupSauceInteraction(ui, dough, bowlIcons["bowl_sauce"]);
+    this.setupSprinkleInteractions(ui, bowlIcons);
 
     this.scale.on("resize", () => {
       this.doughBounds = this.getSauceBounds(this.dough);
@@ -273,10 +274,6 @@ class KitchenScene extends Phaser.Scene {
     this.cutGuides = this.createCutGuides();
     this.setupCutterInput();
     this.cutterAnimating = false;
-
-    if (DEBUG_START_BAKED_CUT) {
-      this.startDebugBakedPizza();
-    }
   }
 
 
@@ -348,8 +345,8 @@ class KitchenScene extends Phaser.Scene {
     });
   }
 
-  // Generic sprinkle setup for cheese/olives.
-  setupSprinkleInteractions(ui, ingredientIcons) {
+  // Generic sprinkle setup for ingredients
+  setupSprinkleInteractions(ui, bowlIcons) {
     this.sprinkleActive = false;
     this.sprinklePainting = false;
     this.sprinkleIconRef = null;
@@ -359,28 +356,18 @@ class KitchenScene extends Phaser.Scene {
 
     this.sprinkleConfigs = [
       {
-        icon: ingredientIcons["ingredient_cheese"],
+        icon: bowlIcons["bowl_cheese"],
         cursorKey: "cheese_cursor",
-        cursorWidth: 100,
-        sprinkleKeys: [
-          "cheese_sprinkle_1",
-          "cheese_sprinkle_2",
-          "cheese_sprinkle_3",
-          "cheese_sprinkle_4",
-        ],
-        sprinkleWidth: 68,
+        cursorWidth: 120,
+        sprinkleFrames: [frameIndex(0, 0), frameIndex(0, 1), frameIndex(0, 2), frameIndex(0, 3)],
+        sprinkleWidth: 80,
       },
       {
-        icon: ingredientIcons["ingredient_olives"],
+        icon: bowlIcons["bowl_olives"],
         cursorKey: "olives_cursor",
-        cursorWidth: 100,
-        sprinkleKeys: [
-          "olives_sprinkle_1",
-          "olives_sprinkle_2",
-          "olives_sprinkle_3",
-          "olives_sprinkle_4",
-        ],
-        sprinkleWidth: 70,
+        cursorWidth: 120,
+        sprinkleFrames: [frameIndex(1, 0), frameIndex(1, 1), frameIndex(1, 2), frameIndex(1, 3)],
+        sprinkleWidth: 80,
       },
     ];
 
@@ -450,7 +437,7 @@ class KitchenScene extends Phaser.Scene {
     }
   }
 
-  // Activate a selected sprinkle bowl (cheese/olives).
+  // Activate a selected bowl
   activateSprinkle(config, pointer) {
     this.sprinkleActive = true;
     this.sprinklePainting = false;
@@ -607,8 +594,8 @@ class KitchenScene extends Phaser.Scene {
     }
     this.lastSprinkleStampTime = now;
 
-    const key = Phaser.Utils.Array.GetRandom(this.sprinkleConfig.sprinkleKeys);
-    const sprinkle = this.add.image(x, y, key);
+    const frame = Phaser.Utils.Array.GetRandom(this.sprinkleConfig.sprinkleFrames);
+    const sprinkle = this.add.image(x, y, "sprinkle-sprite", frame);
     sprinkle.setScale(this.sprinkleConfig.sprinkleWidth / sprinkle.width);
     sprinkle.setRotation(Phaser.Math.FloatBetween(-0.4, 0.4));
     this.pizzaContainer.add(sprinkle);
@@ -956,51 +943,6 @@ class KitchenScene extends Phaser.Scene {
     });
   }
 
-
-  startDebugBakedPizza() {
-    this.isPizzaOnBench = false;
-    this.deactivateSauce();
-    this.deactivateSprinkle();
-
-    const bounds = this.pizzaContainer.getBounds();
-    const localX = (bounds.x - this.ui.x) / this.ui.scaleX;
-    const localY = (bounds.y - this.ui.y) / this.ui.scaleY;
-    const width = Math.ceil(bounds.width / this.ui.scaleX);
-    const height = Math.ceil(bounds.height / this.ui.scaleY);
-    const wasDoughVisible = this.dough.visible;
-    this.dough.setVisible(false);
-    const toppingsSnapshot = this.add.renderTexture(0, 0, width, height);
-    toppingsSnapshot.draw(this.pizzaContainer, -localX, -localY);
-    toppingsSnapshot.setOrigin(0, 0);
-    toppingsSnapshot.setPosition(0, 0);
-    this.dough.setVisible(wasDoughVisible);
-    toppingsSnapshot.setTint(Phaser.Display.Color.GetColor(140, 120, 100));
-
-    const doughOffsetX = this.dough.x - localX;
-    const doughOffsetY = this.dough.y - localY;
-    const doughWidth = this.dough.displayWidth;
-    const doughHeight = this.dough.displayHeight;
-
-    const bakedDough = this.add.image(doughOffsetX, doughOffsetY, "dough_baked");
-    bakedDough.setDisplaySize(doughWidth, doughHeight);
-
-    const bakedPizza = this.add.container(localX, localY);
-    bakedPizza.add([bakedDough, toppingsSnapshot]);
-    this.ui.add(bakedPizza);
-
-    this.returnedPizza = bakedPizza;
-    this.returnedDough = bakedDough;
-    this.returnedPizzaReady = true;
-    this.updateCutGuideLayout();
-    this.showCutterTool();
-
-    this.pizzaContainer.setVisible(false);
-    this.pizzaContainer.setActive(false);
-    if (this.ovenButton) {
-      this.ovenButton.setVisible(false);
-      this.ovenButton.setActive(false);
-    }
-  }
   //#endregion
 
   attachHoverCursorReset(target) {
@@ -1034,6 +976,7 @@ class KitchenScene extends Phaser.Scene {
     });
   }
 
+  //#region Oven animation
   // Capture pizza snapshot and animate on conveyor belt.
   sendPizzaToOven() {
     if (!this.isPizzaOnBench) {
@@ -1109,27 +1052,31 @@ class KitchenScene extends Phaser.Scene {
           shakeTween.stop();
         }
         beltPizza.setY(startY);
-        const fadeHalf = 500;
-        this.tweens.add({
-          targets: beltPizza,
-          alpha: 0,
-          duration: fadeHalf,
-          ease: "Sine.easeInOut",
-          onComplete: () => {
-            beltPizza.setScale(1);
-            beltPizza.setPosition(benchX, benchY);
-            this.tweens.add({
-              targets: beltPizza,
-              alpha: 1,
-              duration: fadeHalf,
-              ease: "Sine.easeInOut",
-              onComplete: () => {
-                this.returnedPizzaReady = true;
-                this.updateCutGuideLayout();
-                this.showCutterTool();
-              },
-            });
-          },
+
+        // after 1s, return pizza to bench
+        this.time.delayedCall(1000, () => {
+          const fadeHalf = 200;
+          this.tweens.add({
+            targets: beltPizza,
+            alpha: 0,
+            duration: fadeHalf,
+            ease: "Sine.easeInOut",
+            onComplete: () => {
+              beltPizza.setScale(1);
+              beltPizza.setPosition(benchX, benchY);
+              this.tweens.add({
+                targets: beltPizza,
+                alpha: 1,
+                duration: fadeHalf,
+                ease: "Sine.easeInOut",
+                onComplete: () => {
+                  this.returnedPizzaReady = true;
+                  this.updateCutGuideLayout();
+                  this.showCutterTool();
+                },
+              });
+            },
+          });
         });
       },
     });
@@ -1160,7 +1107,7 @@ class KitchenScene extends Phaser.Scene {
     const doughSwapDuration = 1200;
     this.tweens.add({
       targets: rawDough,
-      alpha: 0,
+      alpha: 0.2,
       duration: doughSwapDuration,
       delay: doughSwapDelay,
       ease: "Sine.easeInOut",
@@ -1181,6 +1128,7 @@ class KitchenScene extends Phaser.Scene {
     }
   }
 }
+//#endregion
 
 // #endregion
 
@@ -1195,8 +1143,8 @@ const config = {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  //scene: [CounterScene, KitchenScene],
-  scene: [KitchenScene],
+  scene: [CounterScene, KitchenScene],
+  //scene: [KitchenScene],
 };
 
 new Phaser.Game(config);
