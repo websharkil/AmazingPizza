@@ -2,8 +2,8 @@
 export const Theme = {
   fontFamily: "Arial, sans-serif",
   text: {
-    title: {
-      fontSize: 32,
+    score: {
+      fontSize: 26,
       color: "#2f2517",
       stroke: "#fff6d6",
       strokeThickness: 6,

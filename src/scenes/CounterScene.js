@@ -2,12 +2,17 @@ import { ENABLED_INGREDIENTS, GAME_HEIGHT, GAME_WIDTH, INGREDIENT_COLORS } from 
 import { GameState } from "../state.js";
 import { createButton } from "../ui/UIButton.js";
 import { createBubble } from "../ui/UIBubble.js";
+import { createCornerLabel } from "../ui/UILabel.js";
 import { Theme } from "../ui/theme.js";
 import { applyCoverLayout, screenToUi } from "../ui/layout.js";
 
 class CounterScene extends Phaser.Scene {
   constructor() {
     super({ key: "CounterScene" });
+  }
+
+  init(data) {
+    this.hideConfirm = Boolean(data && data.hideConfirm);
   }
 
   preload() {
@@ -23,8 +28,12 @@ class CounterScene extends Phaser.Scene {
     const bg = this.add.image(0, 0, "counter_bg");
     const uiRoot = this.add.container(0, 0);
     applyCoverLayout(this, bg, uiRoot);
+    this.input.setDefaultCursor("default");
 
-    const customerKey = `customer${Phaser.Math.Between(1, 5)}`;
+    const hasExistingOrder = Boolean(GameState.currentCustomer && GameState.currentOrder);
+    const customerKey = hasExistingOrder
+      ? GameState.currentCustomer.spriteKey
+      : `customer${Phaser.Math.Between(1, 5)}`;
     const customer = this.add.image(GAME_WIDTH * 0.5, GAME_HEIGHT * 0.52, customerKey);
     const targetHeight = GAME_HEIGHT * 0.45;
     customer.setScale(targetHeight / customer.height);
@@ -32,7 +41,7 @@ class CounterScene extends Phaser.Scene {
     customer.y = counterY - customer.displayHeight * 0.5;
     uiRoot.add(customer);
 
-    this.currentOrder = this.getRandomOrder();
+    this.currentOrder = hasExistingOrder ? GameState.currentOrder.ingredients : this.getRandomOrder();
 
     // draw bubble with order text
     const bubble = createBubble(this, { textParts: this.buildOrderParts(this.currentOrder) });
@@ -42,28 +51,33 @@ class CounterScene extends Phaser.Scene {
     );
     uiRoot.add(bubble);
 
-    // draw confirm button
-    const confirmBtn = createButton(this, {
-      width: 260,
-      height: 90,
-      label: "OK!",
-      textVariant: "label",
-      onClick: () => {
-        GameState.currentCustomer = { id: Date.now(), type: customerKey, spriteKey: customerKey };
-        GameState.currentOrder = { ingredients: this.currentOrder };
-        this.scene.start("KitchenScene");
-      },
-    });
-    uiRoot.add(confirmBtn);
+    let confirmBtn = null;
+    if (!this.hideConfirm) {
+      // draw confirm button
+      confirmBtn = createButton(this, {
+        width: 260,
+        height: 90,
+        label: "OK!",
+        textVariant: "label",
+        onClick: () => {
+          GameState.currentCustomer = { id: Date.now(), type: customerKey, spriteKey: customerKey };
+          GameState.currentOrder = { ingredients: this.currentOrder };
+          this.scene.start("KitchenScene");
+        },
+      });
+      uiRoot.add(confirmBtn);
 
-    const layoutButtons = () => {
-      const target = screenToUi(uiRoot, this.scale.width * 0.5, this.scale.height * 0.92);
-      confirmBtn.setPosition(target.x, target.y);
-    };
-    layoutButtons();
-    this.scale.on("resize", layoutButtons);
+      const layoutButtons = () => {
+        const target = screenToUi(uiRoot, this.scale.width * 0.5, this.scale.height * 0.92);
+        confirmBtn.setPosition(target.x, target.y);
+      };
+      layoutButtons();
+      this.scale.on("resize", layoutButtons);
+    }
 
-    this.ui = { root: uiRoot, customer, bubble, confirmBtn };
+    const scoreLabel = createCornerLabel(this, "", "score", 0);
+
+    this.ui = { root: uiRoot, customer, bubble, confirmBtn, scoreLabel };
     this.updateUI();
   }
 
@@ -77,6 +91,10 @@ class CounterScene extends Phaser.Scene {
     }
     if (this.ui && this.ui.confirmBtn) {
       this.ui.confirmBtn.setEnabled(true);
+    }
+    if (this.ui && this.ui.scoreLabel) {
+      const score = (GameState.madePizza && GameState.madePizza.score) || 0;
+      this.ui.scoreLabel.setText(`Pizzas: ${GameState.pizzasMade}\nScore: ${score}`);
     }
   }
 

@@ -1,8 +1,7 @@
-import { GAME_HEIGHT, GAME_WIDTH } from "../constants.js";
+import { GAME_WIDTH } from "../constants.js";
 import { GameState } from "../state.js";
 import { createButton } from "../ui/UIButton.js";
-import { createLabel } from "../ui/UILabel.js";
-import { Theme } from "../ui/theme.js";
+import { createCornerLabel } from "../ui/UILabel.js";
 import { applyCoverLayout, screenToUi } from "../ui/layout.js";
 
 function frameIndex(row, col, cols = 4) {
@@ -38,6 +37,7 @@ class KitchenScene extends Phaser.Scene {
     applyCoverLayout(this, bg, uiRoot);
     this.ui = { root: uiRoot };
     this.isPizzaOnBench = true;
+    this.isServeReady = false;
     this.resetPizzaState();
 
     // draw bowls
@@ -85,9 +85,24 @@ class KitchenScene extends Phaser.Scene {
     uiRoot.add(this.ui.ovenButton);
     this.attachHoverCursorReset(this.ui.ovenButton);
 
+    this.ui.serveButton = createButton(this, {
+      width: 260,
+      height: 90,
+      label: "Serve it",
+      textVariant: "label",
+      onClick: () => {
+        this.scene.start("CounterScene", { hideConfirm: true });
+      },
+    });
+    this.ui.serveButton.setVisible(false);
+    this.ui.serveButton.setActive(false);
+    this.ui.serveButton.setEnabled(false);
+    uiRoot.add(this.ui.serveButton);
+
     const layoutButtons = () => {
       const target = screenToUi(uiRoot, this.scale.width * 0.5, this.scale.height * 0.92);
       this.ui.ovenButton.setPosition(target.x, target.y);
+      this.ui.serveButton.setPosition(target.x, target.y);
     };
     layoutButtons();
     this.scale.on("resize", layoutButtons);
@@ -100,7 +115,7 @@ class KitchenScene extends Phaser.Scene {
     this.setupCutterInput();
     this.cutterAnimating = false;
 
-    this.ui.scoreLabel = this.createScoreLabel();
+    this.ui.scoreLabel = createCornerLabel(this, "", "score", 0);
     this.updateUI();
   }
 
@@ -112,8 +127,19 @@ class KitchenScene extends Phaser.Scene {
     if (this.ui && this.ui.ovenButton) {
       this.ui.ovenButton.setEnabled(this.isPizzaOnBench);
     }
+    if (this.ui && this.ui.serveButton) {
+      this.ui.serveButton.setVisible(this.isServeReady);
+      this.ui.serveButton.setActive(this.isServeReady);
+      this.ui.serveButton.setEnabled(this.isServeReady);
+    }
+    if (this.ui && this.ui.scoreLabel) {
+      const score = (GameState.madePizza && GameState.madePizza.score) || 0;
+      this.ui.scoreLabel.setText(`Pizzas: ${GameState.pizzasMade}\nScore: ${score}`);
+      this.ui.scoreLabel.setVisible(true);
+    }
   }
 
+  //#region Sauce and sprinkle painting
   // Sauce painting input and cursor management.
   setupSauceInteraction(uiRoot, dough, sauceIcon) {
     this.sauceActive = false;
@@ -468,21 +494,7 @@ class KitchenScene extends Phaser.Scene {
       stamp.fillCircle(sx, sy, size);
     }
   }
-
-  // Score text display
-  createScoreLabel() {
-    const margin = Theme.ui.margin;
-    const text = createLabel(this, "", "title");
-    text.setOrigin(0, 0);
-    text.setDepth(1500);
-    text.setScrollFactor(0);
-    text.setVisible(false);
-    text.setPosition(margin, margin);
-    this.scale.on("resize", () => {
-      text.setPosition(margin, margin);
-    });
-    return text;
-  }
+//#endregion
 
   resetPizzaState() {
     GameState.madePizza = {
@@ -506,29 +518,15 @@ class KitchenScene extends Phaser.Scene {
     const orderSet = new Set(order);
     const added = GameState.madePizza.ingredients;
     let correct = 0;
-    let wrong = 0;
 
     added.forEach((ingredient) => {
       if (orderSet.has(ingredient)) {
         correct += 1;
-      } else {
-        wrong += 1;
       }
     });
 
-    const rawScore = (correct - wrong) * 10;
-    return Math.max(0, rawScore);
-  }
-
-  showPizzaScore() {
-    const score = this.calculatePizzaScore();
-    GameState.madePizza.score = score;
-    if (!this.ui.scoreLabel) {
-      return;
-    }
-    this.ui.scoreLabel.setText(`Score: ${score}`);
-    this.ui.scoreLabel.setVisible(true);
-    this.ui.root.bringToTop(this.ui.scoreLabel);
+    const rawScore = correct * 10;
+    GameState.madePizza.score = Math.max(0, rawScore);
   }
 
   //#region Pizza cutter
@@ -850,9 +848,9 @@ class KitchenScene extends Phaser.Scene {
       return;
     }
     this.isPizzaOnBench = false;
+    this.isServeReady = false;
     this.deactivateSauce();
     this.deactivateSprinkle();
-    this.showPizzaScore();
     this.updateUI();
 
     // create snapshot of pizza
@@ -939,9 +937,14 @@ class KitchenScene extends Phaser.Scene {
                 duration: fadeHalf,
                 ease: "Sine.easeInOut",
                 onComplete: () => {
+                  // completed oven amination
                   this.returnedPizzaReady = true;
                   this.updateCutGuideLayout();
                   this.showCutterTool();
+                  GameState.pizzasMade += 1;
+                  this.calculatePizzaScore();
+                  this.isServeReady = true;
+                  this.updateUI();
                 },
               });
             },

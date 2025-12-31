@@ -17,3 +17,20 @@ export function createLabel(scene, text, variant = "label") {
   }
   return scene.add.text(0, 0, text, labelStyle);
 }
+
+// Top left score and pizza counters.
+export function createCornerLabel(scene, text, variant = "label", offsetY = 0) {
+  const label = createLabel(scene, text, variant);
+  label.setOrigin(0, 0);
+  label.setDepth(1500);
+  label.setScrollFactor(0);
+  label.setVisible(true);
+
+  const positionLabel = () => {
+    const margin = Theme.ui.margin;
+    label.setPosition(margin, margin + offsetY);
+  };
+  positionLabel();
+  scene.scale.on("resize", positionLabel);
+  return label;
+}
