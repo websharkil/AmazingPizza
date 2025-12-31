@@ -18,7 +18,7 @@ const ENABLED_INGREDIENTS = ["sauce", "cheese", "olives"];
 const GameState = {
   currentCustomer: null,
   currentOrder: null,
-  madePizza: { ingredients: new Set(), baked: false, cut: false, boxed: false },
+  madePizza: { ingredients: new Set(), baked: false, cut: false, boxed: false, score: 0 },
 };
 
 // #endregion
@@ -27,7 +27,8 @@ const GameState = {
 // Keep UI aligned with the cropped background when the canvas resizes.
 function applyCoverLayout(scene, bgImage, uiContainer) {
   const resize = (width, height) => {
-    const scale = Math.max(width / bgImage.width, height / bgImage.height);
+    const maxVerticalCrop = 80;
+    const scale = Math.min(width / bgImage.width, (height + maxVerticalCrop * 2) / bgImage.height);
     const offsetX = (width - bgImage.width * scale) * 0.5;
     const offsetY = (height - bgImage.height * scale) * 0.5;
 
@@ -243,6 +244,7 @@ class KitchenScene extends Phaser.Scene {
     applyCoverLayout(this, bg, ui);
     this.ui = ui;
     this.isPizzaOnBench = true;
+    this.resetPizzaState();
 
     // draw bowls
     const bowlY = 507;
@@ -287,6 +289,7 @@ class KitchenScene extends Phaser.Scene {
     this.cutGuides = this.createCutGuides();
     this.setupCutterInput();
     this.cutterAnimating = false;
+    this.scoreText = this.createScoreText();
   }
 
 
@@ -370,6 +373,7 @@ class KitchenScene extends Phaser.Scene {
     this.sprinkleConfigs = [
       {
         icon: bowlIcons["bowl_cheese"],
+        ingredient: "cheese",
         cursorKey: "cheese_cursor",
         cursorWidth: 120,
         sprinkleFrames: [frameIndex(0, 0), frameIndex(0, 1), frameIndex(0, 2), frameIndex(0, 3)],
@@ -377,6 +381,7 @@ class KitchenScene extends Phaser.Scene {
       },
       {
         icon: bowlIcons["bowl_olives"],
+        ingredient: "olives",
         cursorKey: "olives_cursor",
         cursorWidth: 120,
         sprinkleFrames: [frameIndex(1, 0), frameIndex(1, 1), frameIndex(1, 2), frameIndex(1, 3)],
@@ -597,6 +602,7 @@ class KitchenScene extends Phaser.Scene {
     this.pizzaContainer.bringToTop(layer);
     layer.draw(stamp, drawX, drawY);
     this.sauceLayerIndex = (this.sauceLayerIndex + 1) % this.sauceLayers.length;
+    this.registerIngredient("sauce");
   }
 
   // Drop a random sprinkle image at the cursor tip.
@@ -613,6 +619,9 @@ class KitchenScene extends Phaser.Scene {
     sprinkle.setRotation(Phaser.Math.FloatBetween(-0.4, 0.4));
     this.pizzaContainer.add(sprinkle);
     this.pizzaContainer.bringToTop(sprinkle);
+    if (this.sprinkleConfig && this.sprinkleConfig.ingredient) {
+      this.registerIngredient(this.sprinkleConfig.ingredient);
+    }
   }
 
   // Slightly vary sauce color for a natural look.
@@ -675,6 +684,75 @@ class KitchenScene extends Phaser.Scene {
     this.attachHoverCursorReset(button);
 
     return this.add.container(0, 0, [button, label]);
+  }
+
+  // Score text display
+  createScoreText() {
+    const margin = 28;
+    const text = this.add
+      .text(margin, margin, "", {
+        fontFamily: "Arial, sans-serif",
+        fontSize: "32px",
+        fontStyle: "bold",
+        color: "#2f2517",
+        stroke: "#fff6d6",
+        strokeThickness: 6,
+      })
+      .setOrigin(0, 0)
+      .setDepth(1500)
+      .setScrollFactor(0)
+      .setVisible(false);
+    this.scale.on("resize", () => {
+      text.setPosition(margin, margin);
+    });
+    return text;
+  }
+
+  resetPizzaState() {
+    GameState.madePizza = {
+      ingredients: new Set(),
+      baked: false,
+      cut: false,
+      boxed: false,
+      score: 0,
+    };
+  }
+
+  registerIngredient(name) {
+    if (!name || !GameState.madePizza) {
+      return;
+    }
+    GameState.madePizza.ingredients.add(name);
+  }
+
+  calculatePizzaScore() {
+    const order = (GameState.currentOrder && GameState.currentOrder.ingredients) || [];
+    const orderSet = new Set(order);
+    const added = GameState.madePizza.ingredients;
+    let correct = 0;
+    let wrong = 0;
+
+    added.forEach((ingredient) => {
+      if (orderSet.has(ingredient)) {
+        correct += 1;
+      } else {
+        wrong += 1;
+      }
+    });
+
+    const rawScore = (correct - wrong) * 10;
+    return Math.max(0, rawScore);
+  }
+
+  showPizzaScore() {
+    const score = this.calculatePizzaScore();
+    GameState.madePizza.score = score;
+    if (!this.scoreText) {
+      return;
+    }
+    this.scoreText.setText(`Score: ${score}`);
+    this.scoreText.setVisible(true);
+    this.ui.bringToTop(this.scoreText);
   }
 
   //#region Pizza cutter
@@ -998,6 +1076,7 @@ class KitchenScene extends Phaser.Scene {
     this.isPizzaOnBench = false;
     this.deactivateSauce();
     this.deactivateSprinkle();
+    this.showPizzaScore();
 
     // create snapshot of pizza
     const bounds = this.pizzaContainer.getBounds();
