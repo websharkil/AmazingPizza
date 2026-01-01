@@ -43,6 +43,24 @@ class CounterScene extends Phaser.Scene {
 
     this.currentOrder = hasExistingOrder ? GameState.currentOrder.ingredients : this.getRandomOrder();
 
+    let bakedPizza = null;
+    if (GameState.madePizza && GameState.madePizza.snapshotKey) {
+      const snapshotKey = GameState.madePizza.snapshotKey;
+      if (this.textures.exists(snapshotKey)) {
+        bakedPizza = this.add.image(GAME_WIDTH * 0.75, 850, snapshotKey);
+        bakedPizza.setScale(1.4);
+        uiRoot.add(bakedPizza);
+        const targetY = bakedPizza.y;
+        bakedPizza.y = GAME_HEIGHT + bakedPizza.displayHeight * 0.5;
+        this.tweens.add({
+          targets: bakedPizza,
+          y: targetY,
+          duration: 1000,
+          ease: "Sine.easeOut",
+        });
+      }
+    }
+
     // draw bubble with order text
     const bubble = createBubble(this, { textParts: this.buildOrderParts(this.currentOrder) });
     bubble.setPosition(
@@ -77,7 +95,7 @@ class CounterScene extends Phaser.Scene {
 
     const scoreLabel = createCornerLabel(this, "", "score", 0);
 
-    this.ui = { root: uiRoot, customer, bubble, confirmBtn, scoreLabel };
+    this.ui = { root: uiRoot, customer, bubble, confirmBtn, scoreLabel, bakedPizza };
     this.updateUI();
   }
 

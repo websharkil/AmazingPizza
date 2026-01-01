@@ -33,6 +33,7 @@ class KitchenScene extends Phaser.Scene {
 
   create() {
     const bg = this.add.image(0, 0, "kitchen_bg");
+    this.bg = bg;
     const uiRoot = this.add.container(0, 0);
     applyCoverLayout(this, bg, uiRoot);
     this.ui = { root: uiRoot };
@@ -91,6 +92,9 @@ class KitchenScene extends Phaser.Scene {
       label: "Serve it",
       textVariant: "label",
       onClick: () => {
+        if (this.returnedPizzaReady) {
+          this.captureBeltPizzaSnapshot(this.returnedPizza, this.rawDough);
+        }
         this.scene.start("CounterScene", { hideConfirm: true });
       },
     });
@@ -503,6 +507,8 @@ class KitchenScene extends Phaser.Scene {
       cut: false,
       boxed: false,
       score: 0,
+      snapshotKey: null,
+      snapshotSize: null,
     };
   }
 
@@ -842,6 +848,94 @@ class KitchenScene extends Phaser.Scene {
   }
 
   //#region Oven animation
+  captureBeltPizzaSnapshot(beltPizza, rawDough) {
+    if (!beltPizza || !GameState.madePizza) {
+      return;
+    }
+    const snapshotKey = "baked_pizza_snapshot";
+
+    const previousAlpha = rawDough ? rawDough.alpha : 1;
+    if (rawDough) {
+      rawDough.setAlpha(0);
+    }
+
+    const hiddenItems = [];
+    if (this.bg) {
+      hiddenItems.push({ target: this.bg, visible: this.bg.visible, alpha: this.bg.alpha });
+      this.bg.setVisible(false);
+    }
+    if (this.ui && this.ui.root) {
+      this.ui.root.list.forEach((child) => {
+        if (child === beltPizza) {
+          return;
+        }
+        hiddenItems.push({ target: child, visible: child.visible, alpha: child.alpha });
+        child.setVisible(false);
+      });
+    }
+
+    const bounds = beltPizza.getBounds();
+    const width = Math.ceil(bounds.width);
+    const height = Math.ceil(bounds.height);
+    if (!width || !height) {
+      console.warn("Snapshot skipped: empty bounds", bounds);
+      if (rawDough) {
+        rawDough.setAlpha(previousAlpha);
+      }
+      hiddenItems.forEach(({ target, visible, alpha }) => {
+        target.setVisible(visible);
+        target.setAlpha(alpha);
+      });
+      return;
+    }
+
+    const camera = this.cameras.main;
+    const zoom = camera.zoom || 1;
+    const captureX = (bounds.x - camera.scrollX) * zoom;
+    const captureY = (bounds.y - camera.scrollY) * zoom;
+    const captureW = Math.ceil(width * zoom);
+    const captureH = Math.ceil(height * zoom);
+
+    this.time.delayedCall(0, () => {
+      this.game.renderer.snapshotArea(captureX, captureY, captureW, captureH, (image) => {
+        if (this.textures.exists(snapshotKey)) {
+          this.textures.remove(snapshotKey);
+        }
+
+        const canvasTexture = this.textures.createCanvas(snapshotKey, captureW, captureH);
+        const ctx = canvasTexture.context;
+        ctx.clearRect(0, 0, captureW, captureH);
+        ctx.drawImage(image, 0, 0, captureW, captureH);
+        const img = ctx.getImageData(0, 0, captureW, captureH);
+        const data = img.data;
+        const bg = { r: 0x1c, g: 0x1c, b: 0x1c };
+        const threshold = 3;
+
+        for (let i = 0; i < data.length; i += 4) {
+          const dr = Math.abs(data[i] - bg.r);
+          const dg = Math.abs(data[i + 1] - bg.g);
+          const db = Math.abs(data[i + 2] - bg.b);
+          if (dr <= threshold && dg <= threshold && db <= threshold) {
+            data[i + 3] = 0;
+          }
+        }
+
+        ctx.putImageData(img, 0, 0);
+        canvasTexture.refresh();
+
+        GameState.madePizza.snapshotKey = snapshotKey;
+        GameState.madePizza.snapshotSize = { width: captureW, height: captureH };
+        if (rawDough) {
+          rawDough.setAlpha(previousAlpha);
+        }
+        hiddenItems.forEach(({ target, visible, alpha }) => {
+          target.setVisible(visible);
+          target.setAlpha(alpha);
+        });
+      });
+    });
+  }
+
   // Capture pizza snapshot and animate on conveyor belt.
   sendPizzaToOven() {
     if (!this.isPizzaOnBench) {
@@ -865,6 +959,7 @@ class KitchenScene extends Phaser.Scene {
     toppingsSnapshot.draw(this.pizzaContainer, -localX, -localY);
     toppingsSnapshot.setOrigin(0, 0);
     toppingsSnapshot.setPosition(0, 0);
+    this.beltToppingsSnapshot = toppingsSnapshot;
     this.dough.setVisible(wasDoughVisible);
 
     const doughOffsetX = this.dough.x - localX;
@@ -876,6 +971,7 @@ class KitchenScene extends Phaser.Scene {
 
     const rawDough = this.add.image(doughOffsetX, doughOffsetY, "dough_base");
     rawDough.setDisplaySize(doughWidth, doughHeight);
+    this.rawDough = rawDough;
 
     const bakedDough = this.add.image(doughOffsetX, doughOffsetY, "dough_baked");
     bakedDough.setDisplaySize(doughWidth, doughHeight);
@@ -971,6 +1067,9 @@ class KitchenScene extends Phaser.Scene {
           value
         );
         toppingsSnapshot.setTint(Phaser.Display.Color.GetColor(color.r, color.g, color.b));
+      },
+      onComplete: () => {
+        this.captureBeltPizzaSnapshot(beltPizza, rawDough);
       },
     });
 
