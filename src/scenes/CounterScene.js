@@ -47,8 +47,8 @@ class CounterScene extends Phaser.Scene {
     if (GameState.madePizza && GameState.madePizza.snapshotKey) {
       const snapshotKey = GameState.madePizza.snapshotKey;
       if (this.textures.exists(snapshotKey)) {
-        bakedPizza = this.add.image(GAME_WIDTH * 0.75, 850, snapshotKey);
-        bakedPizza.setScale(1.4);
+        bakedPizza = this.add.image(GAME_WIDTH * 0.75, 820, snapshotKey);
+        bakedPizza.setScale(1.55);
         uiRoot.add(bakedPizza);
         const targetY = bakedPizza.y;
         bakedPizza.y = GAME_HEIGHT + bakedPizza.displayHeight * 0.5;

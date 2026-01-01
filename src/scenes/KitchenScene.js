@@ -848,6 +848,8 @@ class KitchenScene extends Phaser.Scene {
   }
 
   //#region Oven animation
+
+  // Capture a snapshot of the pizza on the conveyor belt.
   captureBeltPizzaSnapshot(beltPizza, rawDough) {
     if (!beltPizza || !GameState.madePizza) {
       return;
