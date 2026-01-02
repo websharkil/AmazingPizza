@@ -1,5 +1,6 @@
 import { GAME_WIDTH } from "../constants.js";
 import { GameState } from "../state.js";
+import { AudioManager } from "../audio/AudioManager.js";
 import { createButton } from "../ui/UIButton.js";
 import { createCornerLabel } from "../ui/UILabel.js";
 import { applyCoverLayout, screenToUi } from "../ui/layout.js";
@@ -19,6 +20,7 @@ class KitchenScene extends Phaser.Scene {
   // Load scene assets.
   preload() {
     this.load.image("kitchen_bg", "assets/bg/kitchen_bg.png");
+    this.load.audio("oven", "assets/sounds/oven.mp3");
     this.load.spritesheet("bowls-sprite", "assets/ingredients/bowls-sprite.png", {
       frameWidth: 320,
       frameHeight: 230,
@@ -42,6 +44,7 @@ class KitchenScene extends Phaser.Scene {
     const uiRoot = this.add.container(0, 0);
     applyCoverLayout(this, bg, uiRoot);
     this.ui = { root: uiRoot };
+    AudioManager.init(this);
     this.isPizzaOnBench = true;
     this.isServeReady = false;
     this.resetPizzaState();
@@ -1043,6 +1046,7 @@ class KitchenScene extends Phaser.Scene {
     // travel on conveyor belt
     const travelDelay = 1000;
     const travelDuration = 7000;
+    AudioManager.playSfx("oven", { duration: (travelDelay + travelDuration) / 1000 });
     this.tweens.add({
       targets: beltPizza,
       x: 1220,

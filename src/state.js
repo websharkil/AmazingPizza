@@ -10,5 +10,11 @@ export const GameState = {
     snapshotKey: null,
     snapshotSize: null,
   },
+  audio: {
+    musicEnabled: true,
+    sfxEnabled: true,
+    musicVolume: 1,
+    sfxVolume: 1,
+  },
   pizzasMade: 0,
 };

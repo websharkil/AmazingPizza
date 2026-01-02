@@ -1,5 +1,6 @@
 import { ENABLED_INGREDIENTS, GAME_HEIGHT, GAME_WIDTH, INGREDIENT_COLORS } from "../constants.js";
 import { GameState } from "../state.js";
+import { AudioManager } from "../audio/AudioManager.js";
 import { createButton } from "../ui/UIButton.js";
 import { createBubble } from "../ui/UIBubble.js";
 import { createCornerLabel } from "../ui/UILabel.js";
@@ -97,6 +98,8 @@ class CounterScene extends Phaser.Scene {
   // Load scene assets.
   preload() {
     this.load.image("counter_bg", "assets/bg/counter_bg.png");
+    //this.load.audio("doorbell", "assets/sounds/doorbell.mp3");
+    this.load.audio("swoosh", "assets/sounds/swoosh.mp3");
     this.load.spritesheet("customers", "assets/customers/customers-sprite.png", {
       frameWidth: 280,
       frameHeight: 360,
@@ -110,6 +113,7 @@ class CounterScene extends Phaser.Scene {
     const uiRoot = this.add.container(0, 0);
     applyCoverLayout(this, bg, uiRoot);
     this.input.setDefaultCursor("default");
+    AudioManager.init(this);
     const counterY = 720;
 
     const hasExistingOrder = Boolean(GameState.currentCustomer && GameState.currentOrder);
@@ -118,7 +122,7 @@ class CounterScene extends Phaser.Scene {
       actionButton = createButton(this, {
         width: 260,
         height: 90,
-        label: "Next customer.",
+        label: "Next customer",
         textVariant: "label",
         onClick: () => {},
       });
@@ -132,9 +136,7 @@ class CounterScene extends Phaser.Scene {
       layoutButtons();
       this.scale.on("resize", layoutButtons);
       if (hasExistingOrder) {
-        actionButton.setVisible(false);
-        actionButton.setActive(false);
-        actionButton.setEnabled(false);
+        this.setActionButton(actionButton, { visible: false, enabled: false, active: false });
       }
     }
     let customerRow = null;
@@ -151,8 +153,8 @@ class CounterScene extends Phaser.Scene {
       if (!actionButton) {
         return;
       }
-      actionButton.setEnabled(false);
-      actionButton.setActive(false);
+      //AudioManager.playSfx("doorbell");
+      this.setActionButton(actionButton, { enabled: false, active: false });
 
       customerRow = Phaser.Math.Between(0, 5);
       customer = this.add.sprite(
@@ -185,32 +187,32 @@ class CounterScene extends Phaser.Scene {
         const updatedPos = getBubblePosition(customer);
         orderBubble.setPosition(updatedPos.x, updatedPos.y);
         orderBubble.setVisible(true);
-        actionButton.setLabel("I'm on it!");
-        actionButton.onClick(() => {
-          GameState.currentCustomer = {
-            id: Date.now(),
-            spriteKey: "customers",
-            frameRow: customerRow,
-            frameIndex: frameIndex(customerRow, 0),
-          };
-          GameState.currentOrder = { ingredients: this.currentOrder };
-          this.scene.start("KitchenScene");
+        this.setActionButton(actionButton, {
+          label: "I'm on it!",
+          onClick: () => {
+            GameState.currentCustomer = {
+              id: Date.now(),
+              spriteKey: "customers",
+              frameRow: customerRow,
+              frameIndex: frameIndex(customerRow, 0),
+            };
+            GameState.currentOrder = { ingredients: this.currentOrder };
+            this.scene.start("KitchenScene");
+          },
+          enabled: true,
+          visible: true,
         });
-        actionButton.setEnabled(true);
-        actionButton.setActive(true);
-        actionButton.setVisible(true);
         this.updateUI();
       });
     };
 
     if (!hasExistingOrder) {
-      if (actionButton) {
-        actionButton.setLabel("Next customer");
-        actionButton.onClick(startFreshCustomer);
-        actionButton.setVisible(true);
-        actionButton.setActive(true);
-        actionButton.setEnabled(true);
-      }
+      this.setActionButton(actionButton, {
+        label: "Next customer",
+        onClick: startFreshCustomer,
+        enabled: true,
+        visible: true,
+      });
       return;
     }
     const existingRow = hasExistingOrder
@@ -266,9 +268,9 @@ class CounterScene extends Phaser.Scene {
       const resultPos = getBubblePosition(customer);
       resultBubble.setPosition(resultPos.x, resultPos.y);
       uiRoot.add(resultBubble);
-      if (actionButton) {
-        actionButton.setLabel("Next customer");
-        actionButton.onClick(() => {
+      this.setActionButton(actionButton, {
+        label: "Next customer",
+        onClick: () => {
           const score = (GameState.madePizza && GameState.madePizza.score) || 0;
           GameState.currentCustomer = null;
           GameState.currentOrder = null;
@@ -282,10 +284,7 @@ class CounterScene extends Phaser.Scene {
             snapshotSize: null,
           };
 
-          if (actionButton) {
-            actionButton.setEnabled(false);
-            actionButton.setActive(false);
-          }
+          this.setActionButton(actionButton, { enabled: false, active: false });
           if (resultBubble) {
             resultBubble.setVisible(false);
           }
@@ -333,16 +332,18 @@ class CounterScene extends Phaser.Scene {
             this.ui.bubble = nextBubble;
             this.ui.bakedPizza = bakedPizza;
 
-            actionButton.setLabel("I'm on it!");
-            actionButton.onClick(() => {
-              GameState.currentCustomer = {
-                id: Date.now(),
-                spriteKey: "customers",
-                frameRow: customerRow,
-                frameIndex: frameIndex(customerRow, 0),
-              };
-              GameState.currentOrder = { ingredients: this.currentOrder };
-              this.scene.start("KitchenScene");
+            this.setActionButton(actionButton, {
+              label: "I'm on it!",
+              onClick: () => {
+                GameState.currentCustomer = {
+                  id: Date.now(),
+                  spriteKey: "customers",
+                  frameRow: customerRow,
+                  frameIndex: frameIndex(customerRow, 0),
+                };
+                GameState.currentOrder = { ingredients: this.currentOrder };
+                this.scene.start("KitchenScene");
+              },
             });
 
             customerEntranceDone = false;
@@ -354,20 +355,15 @@ class CounterScene extends Phaser.Scene {
                 const updatedPos = getBubblePosition(customer);
                 nextBubble.setPosition(updatedPos.x, updatedPos.y);
                 nextBubble.setVisible(true);
-                if (actionButton) {
-                  actionButton.setEnabled(true);
-                  actionButton.setActive(true);
-                  actionButton.setVisible(true);
-                }
+                this.setActionButton(actionButton, { visible: true, enabled: true, active: true });
                 this.updateUI();
               });
             });
           });
-        });
-        actionButton.setVisible(true);
-        actionButton.setActive(true);
-        actionButton.setEnabled(true);
-      }
+        },
+        visible: true,
+        enabled: true,
+      });
       this.updateUI();
     };
 
@@ -427,6 +423,31 @@ class CounterScene extends Phaser.Scene {
       this.ui.scoreLabel.setText(`Pizzas: ${GameState.pizzasMade}\nScore: ${score}`);
     }
   }
+
+  // Configure the shared action button.
+  setActionButton(actionButton, options = {}) {
+    if (!actionButton) {
+      return;
+    }
+    const { label, onClick, visible, enabled, active } = options;
+    if (typeof label === "string") {
+      actionButton.setLabel(label);
+    }
+    if (onClick) {
+      actionButton.onClick(onClick);
+    }
+    if (typeof visible === "boolean") {
+      actionButton.setVisible(visible);
+    }
+    if (typeof active === "boolean") {
+      actionButton.setActive(active);
+    } else if (typeof visible === "boolean") {
+      actionButton.setActive(visible);
+    }
+    if (typeof enabled === "boolean") {
+      actionButton.setEnabled(enabled);
+    }
+  }
   //#endregion
 
   //#region Customer animation
@@ -435,6 +456,7 @@ class CounterScene extends Phaser.Scene {
     if (!customer) {
       return;
     }
+    AudioManager.playSfx("swoosh", { seek: 0.2, duration: 1.2 });
     this.tweens.add({
       targets: customer,
       y: targetY,
@@ -452,6 +474,7 @@ class CounterScene extends Phaser.Scene {
     if (!customer) {
       return;
     }
+    AudioManager.playSfx("swoosh", { seek: 1.3 });
     this.tweens.add({
       targets: customer,
       y: targetY,
