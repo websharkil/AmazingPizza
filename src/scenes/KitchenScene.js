@@ -501,12 +501,13 @@ class KitchenScene extends Phaser.Scene {
 //#endregion
 
   resetPizzaState() {
+    const runningScore = (GameState.madePizza && GameState.madePizza.score) || 0;
     GameState.madePizza = {
       ingredients: new Set(),
       baked: false,
       cut: false,
       boxed: false,
-      score: 0,
+      score: runningScore,
       snapshotKey: null,
       snapshotSize: null,
     };
@@ -1039,8 +1040,6 @@ class KitchenScene extends Phaser.Scene {
                   this.returnedPizzaReady = true;
                   this.updateCutGuideLayout();
                   this.showCutterTool();
-                  GameState.pizzasMade += 1;
-                  this.calculatePizzaScore();
                   this.isServeReady = true;
                   this.updateUI();
                 },

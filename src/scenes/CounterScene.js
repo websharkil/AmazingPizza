@@ -6,6 +6,75 @@ import { createCornerLabel } from "../ui/UILabel.js";
 import { Theme } from "../ui/theme.js";
 import { applyCoverLayout, screenToUi } from "../ui/layout.js";
 
+function frameIndex(row, col, cols = 3) {
+  return row * cols + col;
+}
+
+function parseLegacyCustomerRow(spriteKey) {
+  if (!spriteKey) {
+    return null;
+  }
+  const match = String(spriteKey).match(/customer(\d+)/i);
+  if (!match) {
+    return null;
+  }
+  const row = Number.parseInt(match[1], 10) - 1;
+  if (Number.isNaN(row)) {
+    return null;
+  }
+  return Phaser.Math.Clamp(row, 0, 5);
+}
+
+function calculatePizzaScore(order, madePizza) {
+  const orderSet = new Set(order || []);
+  const added = (madePizza && madePizza.ingredients) || new Set();
+  let correct = 0;
+
+  added.forEach((ingredient) => {
+    if (orderSet.has(ingredient)) {
+      correct += 1;
+    }
+  });
+
+  return Math.max(0, correct * 10);
+}
+
+function isOrderCorrect(order, madePizza) {
+  const orderSet = new Set(order || []);
+  const added = (madePizza && madePizza.ingredients) || new Set();
+  if (orderSet.size !== added.size) {
+    return false;
+  }
+  for (const item of orderSet) {
+    if (!added.has(item)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function applyOrderResult(customer, customerRow, order, madePizza) {
+  if (!customer) {
+    return false;
+  }
+  const correct = isOrderCorrect(order, madePizza);
+  const moodCol = correct ? 1 : 2;
+  customer.setFrame(frameIndex(customerRow, moodCol));
+
+  const earned = calculatePizzaScore(order, madePizza);
+  const runningScore = (GameState.madePizza && GameState.madePizza.score) || 0;
+  GameState.madePizza.score = runningScore + earned;
+  GameState.pizzasMade += 1;
+  return correct;
+}
+
+function getBubblePosition(customer) {
+  return {
+    x: customer.x + customer.displayWidth * 0.2,
+    y: customer.y - customer.displayHeight * 0.5 - 30,
+  };
+}
+
 class CounterScene extends Phaser.Scene {
   constructor() {
     super({ key: "CounterScene" });
@@ -17,11 +86,10 @@ class CounterScene extends Phaser.Scene {
 
   preload() {
     this.load.image("counter_bg", "assets/bg/counter_bg.png");
-    this.load.image("customer1", "assets/customers/character1.png");
-    this.load.image("customer2", "assets/customers/character2.png");
-    this.load.image("customer3", "assets/customers/character3.png");
-    this.load.image("customer4", "assets/customers/character4.png");
-    this.load.image("customer5", "assets/customers/character5.png");
+    this.load.spritesheet("customers", "assets/customers/customers-sprite.png", {
+      frameWidth: 280,
+      frameHeight: 360,
+    });
   }
 
   create() {
@@ -31,10 +99,16 @@ class CounterScene extends Phaser.Scene {
     this.input.setDefaultCursor("default");
 
     const hasExistingOrder = Boolean(GameState.currentCustomer && GameState.currentOrder);
-    const customerKey = hasExistingOrder
-      ? GameState.currentCustomer.spriteKey
-      : `customer${Phaser.Math.Between(1, 5)}`;
-    const customer = this.add.image(GAME_WIDTH * 0.5, GAME_HEIGHT * 0.52, customerKey);
+    const existingRow = hasExistingOrder
+      ? GameState.currentCustomer.frameRow ?? parseLegacyCustomerRow(GameState.currentCustomer.spriteKey)
+      : null;
+    let customerRow = existingRow ?? Phaser.Math.Between(0, 5);
+    let customer = this.add.sprite(
+      GAME_WIDTH * 0.5,
+      GAME_HEIGHT * 0.52,
+      "customers",
+      frameIndex(customerRow, 0)
+    );
     const targetHeight = GAME_HEIGHT * 0.45;
     customer.setScale(targetHeight / customer.height);
     const counterY = 720;
@@ -42,6 +116,103 @@ class CounterScene extends Phaser.Scene {
     uiRoot.add(customer);
 
     this.currentOrder = hasExistingOrder ? GameState.currentOrder.ingredients : this.getRandomOrder();
+
+    const shouldScoreOrder = hasExistingOrder;
+    const orderBubble = createBubble(this, { textParts: this.buildOrderParts(this.currentOrder) });
+    const bubblePos = getBubblePosition(customer);
+    orderBubble.setPosition(bubblePos.x, bubblePos.y);
+    uiRoot.add(orderBubble);
+    if (hasExistingOrder) {
+      orderBubble.setVisible(false);
+    }
+
+    let resultBubble = null;
+    const showResult = () => {
+      const correct = applyOrderResult(customer, customerRow, this.currentOrder, GameState.madePizza);
+      const message = correct ? "YAY!" : "Oh no! I wanted ";
+      if (resultBubble) {
+        resultBubble.destroy();
+      }
+      const baseColor = Theme.text.bubble.color;
+      const textParts = correct
+        ? [{ text: message, color: baseColor }]
+        : [{ text: message, color: baseColor }, ...this.buildIngredientParts(this.currentOrder)];
+      resultBubble = createBubble(this, { textParts });
+      const resultPos = getBubblePosition(customer);
+      resultBubble.setPosition(resultPos.x, resultPos.y);
+      uiRoot.add(resultBubble);
+      if (actionButton) {
+        actionButton.setLabel("Next customer.");
+        actionButton.onClick(() => {
+          const score = (GameState.madePizza && GameState.madePizza.score) || 0;
+          GameState.currentCustomer = null;
+          GameState.currentOrder = null;
+          GameState.madePizza = {
+            ingredients: new Set(),
+            baked: false,
+            cut: false,
+            boxed: false,
+            score,
+            snapshotKey: null,
+            snapshotSize: null,
+          };
+
+          if (bakedPizza) {
+            bakedPizza.destroy();
+            bakedPizza = null;
+          }
+          if (resultBubble) {
+            resultBubble.destroy();
+            resultBubble = null;
+          }
+          if (orderBubble) {
+            orderBubble.destroy();
+          }
+          if (customer) {
+            customer.destroy();
+          }
+
+          customerRow = Phaser.Math.Between(0, 5);
+          customer = this.add.sprite(
+            GAME_WIDTH * 0.5,
+            GAME_HEIGHT * 0.52,
+            "customers",
+            frameIndex(customerRow, 0)
+          );
+          customer.setScale(targetHeight / customer.height);
+          customer.y = counterY - customer.displayHeight * 0.5;
+          uiRoot.add(customer);
+
+          this.currentOrder = this.getRandomOrder();
+          const nextBubble = createBubble(this, { textParts: this.buildOrderParts(this.currentOrder) });
+          const nextPos = getBubblePosition(customer);
+          nextBubble.setPosition(nextPos.x, nextPos.y);
+          uiRoot.add(nextBubble);
+
+          this.ui.customer = customer;
+          this.ui.bubble = nextBubble;
+          this.ui.bakedPizza = bakedPizza;
+
+          actionButton.setLabel("OK!");
+          actionButton.onClick(() => {
+            GameState.currentCustomer = {
+              id: Date.now(),
+              spriteKey: "customers",
+              frameRow: customerRow,
+              frameIndex: frameIndex(customerRow, 0),
+            };
+            GameState.currentOrder = { ingredients: this.currentOrder };
+            this.scene.start("KitchenScene");
+          });
+
+          this.updateUI();
+        });
+        actionButton.setVisible(true);
+        actionButton.setActive(true);
+        actionButton.setEnabled(true);
+      }
+      this.updateUI();
+    };
 
     let bakedPizza = null;
     if (GameState.madePizza && GameState.madePizza.snapshotKey) {
@@ -57,45 +228,54 @@ class CounterScene extends Phaser.Scene {
           y: targetY,
           duration: 1000,
           ease: "Sine.easeOut",
+          onComplete: () => {
+            if (shouldScoreOrder) {
+              showResult();
+            }
+          },
         });
       }
     }
+    if (shouldScoreOrder && !bakedPizza) {
+      showResult();
+    }
 
-    // draw bubble with order text
-    const bubble = createBubble(this, { textParts: this.buildOrderParts(this.currentOrder) });
-    bubble.setPosition(
-      customer.x + customer.displayWidth * 0.2,
-      customer.y - customer.displayHeight * 0.5 - 30
-    );
-    uiRoot.add(bubble);
-
-    let confirmBtn = null;
-    if (!this.hideConfirm) {
-      // draw confirm button
-      confirmBtn = createButton(this, {
+    let actionButton = null;
+    if (!this.hideConfirm || hasExistingOrder) {
+      actionButton = createButton(this, {
         width: 260,
         height: 90,
-        label: "OK!",
+        label: hasExistingOrder ? "Next customer" : "I'm on it!",
         textVariant: "label",
         onClick: () => {
-          GameState.currentCustomer = { id: Date.now(), type: customerKey, spriteKey: customerKey };
+          GameState.currentCustomer = {
+            id: Date.now(),
+            spriteKey: "customers",
+            frameRow: customerRow,
+            frameIndex: frameIndex(customerRow, 0),
+          };
           GameState.currentOrder = { ingredients: this.currentOrder };
           this.scene.start("KitchenScene");
         },
       });
-      uiRoot.add(confirmBtn);
+      uiRoot.add(actionButton);
 
       const layoutButtons = () => {
         const target = screenToUi(uiRoot, this.scale.width * 0.5, this.scale.height * 0.92);
-        confirmBtn.setPosition(target.x, target.y);
+        actionButton.setPosition(target.x, target.y);
       };
       layoutButtons();
       this.scale.on("resize", layoutButtons);
+      if (hasExistingOrder) {
+        actionButton.setVisible(false);
+        actionButton.setActive(false);
+        actionButton.setEnabled(false);
+      }
     }
 
     const scoreLabel = createCornerLabel(this, "", "score", 0);
 
-    this.ui = { root: uiRoot, customer, bubble, confirmBtn, scoreLabel, bakedPizza };
+    this.ui = { root: uiRoot, customer, bubble: orderBubble, confirmBtn: actionButton, scoreLabel, bakedPizza };
     this.updateUI();
   }
 
@@ -123,10 +303,18 @@ class CounterScene extends Phaser.Scene {
     return pool.slice(0, count);
   }
 
+  //#region order text builders
   buildOrderParts(ingredients) {
     const parts = [];
     const baseColor = Theme.text.bubble.color;
     parts.push({ text: "Hi, I'd like a pizza with ", color: baseColor });
+    parts.push(...this.buildIngredientParts(ingredients));
+    return parts;
+  }
+
+  buildIngredientParts(ingredients) {
+    const parts = [];
+    const baseColor = Theme.text.bubble.color;
     ingredients.forEach((ingredient, index) => {
       if (index > 0) {
         const separator = index === ingredients.length - 1 ? " and " : ", ";
@@ -141,6 +329,7 @@ class CounterScene extends Phaser.Scene {
   getIngredientColor(ingredient) {
     return INGREDIENT_COLORS[ingredient] || 0xcccccc;
   }
+  //#endregion
 }
 
 export default CounterScene;
