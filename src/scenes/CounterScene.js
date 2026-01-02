@@ -6,10 +6,13 @@ import { createCornerLabel } from "../ui/UILabel.js";
 import { Theme } from "../ui/theme.js";
 import { applyCoverLayout, screenToUi } from "../ui/layout.js";
 
+//#region Helpers
+// Compute a spritesheet frame index.
 function frameIndex(row, col, cols = 3) {
   return row * cols + col;
 }
 
+// Parse legacy customer sprite keys to a row index.
 function parseLegacyCustomerRow(spriteKey) {
   if (!spriteKey) {
     return null;
@@ -25,6 +28,7 @@ function parseLegacyCustomerRow(spriteKey) {
   return Phaser.Math.Clamp(row, 0, 5);
 }
 
+// Calculate the earned score for a single pizza.
 function calculatePizzaScore(order, madePizza) {
   const orderSet = new Set(order || []);
   const added = (madePizza && madePizza.ingredients) || new Set();
@@ -39,6 +43,7 @@ function calculatePizzaScore(order, madePizza) {
   return Math.max(0, correct * 10);
 }
 
+// Check whether the order and pizza ingredients match exactly.
 function isOrderCorrect(order, madePizza) {
   const orderSet = new Set(order || []);
   const added = (madePizza && madePizza.ingredients) || new Set();
@@ -53,6 +58,7 @@ function isOrderCorrect(order, madePizza) {
   return true;
 }
 
+// Apply mood and score results for the served pizza.
 function applyOrderResult(customer, customerRow, order, madePizza) {
   if (!customer) {
     return false;
@@ -68,22 +74,27 @@ function applyOrderResult(customer, customerRow, order, madePizza) {
   return correct;
 }
 
+// Position the speech bubble relative to the customer.
 function getBubblePosition(customer) {
   return {
     x: customer.x + customer.displayWidth * 0.2,
     y: customer.y - customer.displayHeight * 0.5 - 30,
   };
 }
+//#endregion
 
 class CounterScene extends Phaser.Scene {
+  // Create the scene instance.
   constructor() {
     super({ key: "CounterScene" });
   }
 
+  // Initialize scene data from navigation.
   init(data) {
     this.hideConfirm = Boolean(data && data.hideConfirm);
   }
 
+  // Load scene assets.
   preload() {
     this.load.image("counter_bg", "assets/bg/counter_bg.png");
     this.load.spritesheet("customers", "assets/customers/customers-sprite.png", {
@@ -92,18 +103,121 @@ class CounterScene extends Phaser.Scene {
     });
   }
 
+  //#region Lifecycle
+  // Build the scene layout and UI.
   create() {
     const bg = this.add.image(0, 0, "counter_bg");
     const uiRoot = this.add.container(0, 0);
     applyCoverLayout(this, bg, uiRoot);
     this.input.setDefaultCursor("default");
+    const counterY = 720;
 
     const hasExistingOrder = Boolean(GameState.currentCustomer && GameState.currentOrder);
+    let actionButton = null;
+    if (!this.hideConfirm || hasExistingOrder) {
+      actionButton = createButton(this, {
+        width: 260,
+        height: 90,
+        label: "Next customer.",
+        textVariant: "label",
+        onClick: () => {},
+      });
+      uiRoot.add(actionButton);
+
+      // Position the action button relative to the screen.
+      const layoutButtons = () => {
+        const target = screenToUi(uiRoot, this.scale.width * 0.5, this.scale.height * 0.92);
+        actionButton.setPosition(target.x, target.y);
+      };
+      layoutButtons();
+      this.scale.on("resize", layoutButtons);
+      if (hasExistingOrder) {
+        actionButton.setVisible(false);
+        actionButton.setActive(false);
+        actionButton.setEnabled(false);
+      }
+    }
+    let customerRow = null;
+    let customer = null;
+    let orderBubble = null;
+    let bakedPizza = null;
+    const scoreLabel = createCornerLabel(this, "", "score", 0);
+
+    this.ui = { root: uiRoot, customer, bubble: orderBubble, confirmBtn: actionButton, scoreLabel, bakedPizza };
+    this.updateUI();
+
+    // Start the first customer flow on demand.
+    const startFreshCustomer = () => {
+      if (!actionButton) {
+        return;
+      }
+      actionButton.setEnabled(false);
+      actionButton.setActive(false);
+
+      customerRow = Phaser.Math.Between(0, 5);
+      customer = this.add.sprite(
+        GAME_WIDTH * 0.5,
+        GAME_HEIGHT * 0.52,
+        "customers",
+        frameIndex(customerRow, 0)
+      );
+      const targetHeight = GAME_HEIGHT * 0.45;
+      customer.setScale(targetHeight / customer.height);
+      const counterY = 720;
+      const customerTargetY = counterY - customer.displayHeight * 0.5;
+      const entryY = counterY + customer.displayHeight * 0.6;
+      customer.y = entryY;
+      uiRoot.add(customer);
+      this.applyCustomerCrop(customer, counterY);
+
+      this.currentOrder = this.getRandomOrder();
+      orderBubble = createBubble(this, { textParts: this.buildOrderParts(this.currentOrder) });
+      const bubblePos = getBubblePosition(customer);
+      orderBubble.setPosition(bubblePos.x, bubblePos.y);
+      orderBubble.setVisible(false);
+      uiRoot.add(orderBubble);
+
+      this.ui.customer = customer;
+      this.ui.bubble = orderBubble;
+      this.ui.bakedPizza = null;
+
+      this.animateCustomerIn(customer, customerTargetY, counterY, () => {
+        const updatedPos = getBubblePosition(customer);
+        orderBubble.setPosition(updatedPos.x, updatedPos.y);
+        orderBubble.setVisible(true);
+        actionButton.setLabel("I'm on it!");
+        actionButton.onClick(() => {
+          GameState.currentCustomer = {
+            id: Date.now(),
+            spriteKey: "customers",
+            frameRow: customerRow,
+            frameIndex: frameIndex(customerRow, 0),
+          };
+          GameState.currentOrder = { ingredients: this.currentOrder };
+          this.scene.start("KitchenScene");
+        });
+        actionButton.setEnabled(true);
+        actionButton.setActive(true);
+        actionButton.setVisible(true);
+        this.updateUI();
+      });
+    };
+
+    if (!hasExistingOrder) {
+      if (actionButton) {
+        actionButton.setLabel("Next customer");
+        actionButton.onClick(startFreshCustomer);
+        actionButton.setVisible(true);
+        actionButton.setActive(true);
+        actionButton.setEnabled(true);
+      }
+      return;
+    }
     const existingRow = hasExistingOrder
       ? GameState.currentCustomer.frameRow ?? parseLegacyCustomerRow(GameState.currentCustomer.spriteKey)
       : null;
-    let customerRow = existingRow ?? Phaser.Math.Between(0, 5);
-    let customer = this.add.sprite(
+    customerRow = existingRow ?? Phaser.Math.Between(0, 5);
+    customer = this.add.sprite(
       GAME_WIDTH * 0.5,
       GAME_HEIGHT * 0.52,
       "customers",
@@ -111,23 +225,34 @@ class CounterScene extends Phaser.Scene {
     );
     const targetHeight = GAME_HEIGHT * 0.45;
     customer.setScale(targetHeight / customer.height);
-    const counterY = 720;
-    customer.y = counterY - customer.displayHeight * 0.5;
+    const customerTargetY = counterY - customer.displayHeight * 0.5;
+    customer.y = hasExistingOrder ? customerTargetY : counterY;
     uiRoot.add(customer);
+    this.applyCustomerCrop(customer, counterY);
 
     this.currentOrder = hasExistingOrder ? GameState.currentOrder.ingredients : this.getRandomOrder();
 
     const shouldScoreOrder = hasExistingOrder;
-    const orderBubble = createBubble(this, { textParts: this.buildOrderParts(this.currentOrder) });
+    orderBubble = createBubble(this, { textParts: this.buildOrderParts(this.currentOrder) });
     const bubblePos = getBubblePosition(customer);
     orderBubble.setPosition(bubblePos.x, bubblePos.y);
     uiRoot.add(orderBubble);
-    if (hasExistingOrder) {
-      orderBubble.setVisible(false);
-    }
+    orderBubble.setVisible(false);
 
     let resultBubble = null;
+    let customerEntranceDone = false;
+    let pendingResult = false;
+    let resultShown = false;
+    // Show the result bubble and update state after serving.
     const showResult = () => {
+      if (!customerEntranceDone) {
+        pendingResult = true;
+        return;
+      }
+      if (resultShown) {
+        return;
+      }
+      resultShown = true;
       const correct = applyOrderResult(customer, customerRow, this.currentOrder, GameState.madePizza);
       const message = correct ? "YAY!" : "Oh no! I wanted ";
       if (resultBubble) {
@@ -142,7 +267,7 @@ class CounterScene extends Phaser.Scene {
       resultBubble.setPosition(resultPos.x, resultPos.y);
       uiRoot.add(resultBubble);
       if (actionButton) {
-        actionButton.setLabel("Next customer.");
+        actionButton.setLabel("Next customer");
         actionButton.onClick(() => {
           const score = (GameState.madePizza && GameState.madePizza.score) || 0;
           GameState.currentCustomer = null;
@@ -157,55 +282,87 @@ class CounterScene extends Phaser.Scene {
             snapshotSize: null,
           };
 
-          if (bakedPizza) {
-            bakedPizza.destroy();
-            bakedPizza = null;
+          if (actionButton) {
+            actionButton.setEnabled(false);
+            actionButton.setActive(false);
           }
           if (resultBubble) {
-            resultBubble.destroy();
-            resultBubble = null;
+            resultBubble.setVisible(false);
           }
           if (orderBubble) {
-            orderBubble.destroy();
-          }
-          if (customer) {
-            customer.destroy();
+            orderBubble.setVisible(false);
           }
 
-          customerRow = Phaser.Math.Between(0, 5);
-          customer = this.add.sprite(
-            GAME_WIDTH * 0.5,
-            GAME_HEIGHT * 0.52,
-            "customers",
-            frameIndex(customerRow, 0)
-          );
-          customer.setScale(targetHeight / customer.height);
-          customer.y = counterY - customer.displayHeight * 0.5;
-          uiRoot.add(customer);
+          const exitY = counterY + customer.displayHeight * 0.6;
+          this.animateCustomerOut(customer, exitY, counterY, () => {
+            if (bakedPizza) {
+              bakedPizza.destroy();
+              bakedPizza = null;
+            }
+            if (resultBubble) {
+              resultBubble.destroy();
+              resultBubble = null;
+            }
+            if (orderBubble) {
+              orderBubble.destroy();
+            }
+            if (customer) {
+              customer.destroy();
+            }
 
-          this.currentOrder = this.getRandomOrder();
-          const nextBubble = createBubble(this, { textParts: this.buildOrderParts(this.currentOrder) });
-          const nextPos = getBubblePosition(customer);
-          nextBubble.setPosition(nextPos.x, nextPos.y);
-          uiRoot.add(nextBubble);
+            customerRow = Phaser.Math.Between(0, 5);
+            customer = this.add.sprite(
+              GAME_WIDTH * 0.5,
+              GAME_HEIGHT * 0.52,
+              "customers",
+              frameIndex(customerRow, 0)
+            );
+            customer.setScale(targetHeight / customer.height);
+            customer.y = exitY;
+            uiRoot.add(customer);
+            this.applyCustomerCrop(customer, counterY);
 
-          this.ui.customer = customer;
-          this.ui.bubble = nextBubble;
-          this.ui.bakedPizza = bakedPizza;
+            this.currentOrder = this.getRandomOrder();
+            const nextBubble = createBubble(this, { textParts: this.buildOrderParts(this.currentOrder) });
+            const nextPos = getBubblePosition(customer);
+            nextBubble.setPosition(nextPos.x, nextPos.y);
+            nextBubble.setVisible(false);
+            uiRoot.add(nextBubble);
 
-          actionButton.setLabel("OK!");
-          actionButton.onClick(() => {
-            GameState.currentCustomer = {
-              id: Date.now(),
-              spriteKey: "customers",
-              frameRow: customerRow,
-              frameIndex: frameIndex(customerRow, 0),
-            };
-            GameState.currentOrder = { ingredients: this.currentOrder };
-            this.scene.start("KitchenScene");
+            this.ui.customer = customer;
+            this.ui.bubble = nextBubble;
+            this.ui.bakedPizza = bakedPizza;
+
+            actionButton.setLabel("I'm on it!");
+            actionButton.onClick(() => {
+              GameState.currentCustomer = {
+                id: Date.now(),
+                spriteKey: "customers",
+                frameRow: customerRow,
+                frameIndex: frameIndex(customerRow, 0),
+              };
+              GameState.currentOrder = { ingredients: this.currentOrder };
+              this.scene.start("KitchenScene");
+            });
+
+            customerEntranceDone = false;
+            pendingResult = false;
+            resultShown = false;
+            this.time.delayedCall(1000, () => {
+              this.animateCustomerIn(customer, customerTargetY, counterY, () => {
+                customerEntranceDone = true;
+                const updatedPos = getBubblePosition(customer);
+                nextBubble.setPosition(updatedPos.x, updatedPos.y);
+                nextBubble.setVisible(true);
+                if (actionButton) {
+                  actionButton.setEnabled(true);
+                  actionButton.setActive(true);
+                  actionButton.setVisible(true);
+                }
+                this.updateUI();
+              });
+            });
           });
-
-          this.updateUI();
         });
         actionButton.setVisible(true);
         actionButton.setActive(true);
@@ -214,7 +371,6 @@ class CounterScene extends Phaser.Scene {
       this.updateUI();
     };
 
-    let bakedPizza = null;
     if (GameState.madePizza && GameState.madePizza.snapshotKey) {
       const snapshotKey = GameState.madePizza.snapshotKey;
       if (this.textures.exists(snapshotKey)) {
@@ -240,49 +396,25 @@ class CounterScene extends Phaser.Scene {
       showResult();
     }
 
-    let actionButton = null;
-    if (!this.hideConfirm || hasExistingOrder) {
-      actionButton = createButton(this, {
-        width: 260,
-        height: 90,
-        label: hasExistingOrder ? "Next customer" : "I'm on it!",
-        textVariant: "label",
-        onClick: () => {
-          GameState.currentCustomer = {
-            id: Date.now(),
-            spriteKey: "customers",
-            frameRow: customerRow,
-            frameIndex: frameIndex(customerRow, 0),
-          };
-          GameState.currentOrder = { ingredients: this.currentOrder };
-          this.scene.start("KitchenScene");
-        },
-      });
-      uiRoot.add(actionButton);
-
-      const layoutButtons = () => {
-        const target = screenToUi(uiRoot, this.scale.width * 0.5, this.scale.height * 0.92);
-        actionButton.setPosition(target.x, target.y);
-      };
-      layoutButtons();
-      this.scale.on("resize", layoutButtons);
-      if (hasExistingOrder) {
-        actionButton.setVisible(false);
-        actionButton.setActive(false);
-        actionButton.setEnabled(false);
-      }
-    }
-
-    const scoreLabel = createCornerLabel(this, "", "score", 0);
-
-    this.ui = { root: uiRoot, customer, bubble: orderBubble, confirmBtn: actionButton, scoreLabel, bakedPizza };
+    this.ui.customer = customer;
+    this.ui.bubble = orderBubble;
+    this.ui.bakedPizza = bakedPizza;
     this.updateUI();
+
+    customerEntranceDone = true;
+    if (pendingResult) {
+      showResult();
+    }
   }
 
+  // Per-frame update hook.
   update() {
     // Game loop updates will go here.
   }
+  //#endregion
 
+  //#region UI
+  // Refresh UI labels and button states.
   updateUI() {
     if (this.ui && this.ui.bubble) {
       this.ui.bubble.setText(this.buildOrderParts(this.currentOrder));
@@ -295,7 +427,60 @@ class CounterScene extends Phaser.Scene {
       this.ui.scoreLabel.setText(`Pizzas: ${GameState.pizzasMade}\nScore: ${score}`);
     }
   }
+  //#endregion
 
+  //#region Customer animation
+  // Slide a customer sprite up into view.
+  animateCustomerIn(customer, targetY, counterY, onComplete) {
+    if (!customer) {
+      return;
+    }
+    this.tweens.add({
+      targets: customer,
+      y: targetY,
+      duration: 500,
+      ease: "Sine.easeOut",
+      onUpdate: () => {
+        this.applyCustomerCrop(customer, counterY);
+      },
+      onComplete,
+    });
+  }
+
+  // Slide a customer sprite down out of view.
+  animateCustomerOut(customer, targetY, counterY, onComplete) {
+    if (!customer) {
+      return;
+    }
+    this.tweens.add({
+      targets: customer,
+      y: targetY,
+      duration: 500,
+      ease: "Sine.easeIn",
+      onUpdate: () => {
+        this.applyCustomerCrop(customer, counterY);
+      },
+      onComplete,
+    });
+  }
+
+  // Crop the customer sprite so it hides below the counter line.
+  applyCustomerCrop(customer, counterY) {
+    if (!customer) {
+      return;
+    }
+    const topY = customer.y - customer.displayHeight * customer.originY;
+    const visibleHeight = Phaser.Math.Clamp(counterY - topY, 0, customer.displayHeight);
+    if (visibleHeight >= customer.displayHeight) {
+      customer.setCrop();
+      return;
+    }
+    const cropHeight = visibleHeight / customer.scaleY;
+    customer.setCrop(0, 0, customer.width, cropHeight);
+  }
+  //#endregion
+
+  //#region Orders
   // Random order of 1-4 ingredients.
   getRandomOrder() {
     const count = Phaser.Math.Between(1, 4);
@@ -304,6 +489,7 @@ class CounterScene extends Phaser.Scene {
   }
 
   //#region order text builders
+  // Build the full order text parts.
   buildOrderParts(ingredients) {
     const parts = [];
     const baseColor = Theme.text.bubble.color;
@@ -312,6 +498,7 @@ class CounterScene extends Phaser.Scene {
     return parts;
   }
 
+  // Build ingredient-only text parts.
   buildIngredientParts(ingredients) {
     const parts = [];
     const baseColor = Theme.text.bubble.color;
@@ -326,9 +513,11 @@ class CounterScene extends Phaser.Scene {
     return parts;
   }
 
+  // Map ingredient names to display colors.
   getIngredientColor(ingredient) {
     return INGREDIENT_COLORS[ingredient] || 0xcccccc;
   }
+  //#endregion
   //#endregion
 }
 

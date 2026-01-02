@@ -4,15 +4,19 @@ import { createButton } from "../ui/UIButton.js";
 import { createCornerLabel } from "../ui/UILabel.js";
 import { applyCoverLayout, screenToUi } from "../ui/layout.js";
 
+// Compute a spritesheet frame index.
 function frameIndex(row, col, cols = 4) {
   return row * cols + col;
 }
 
 class KitchenScene extends Phaser.Scene {
+  // Create the scene instance.
   constructor() {
     super({ key: "KitchenScene" });
   }
 
+  //#region Lifecycle
+  // Load scene assets.
   preload() {
     this.load.image("kitchen_bg", "assets/bg/kitchen_bg.png");
     this.load.spritesheet("bowls-sprite", "assets/ingredients/bowls-sprite.png", {
@@ -31,6 +35,7 @@ class KitchenScene extends Phaser.Scene {
     this.load.image("cutter_tool", "assets/ingredients/cutter.png");
   }
 
+  // Build the scene layout and UI.
   create() {
     const bg = this.add.image(0, 0, "kitchen_bg");
     this.bg = bg;
@@ -123,10 +128,14 @@ class KitchenScene extends Phaser.Scene {
     this.updateUI();
   }
 
+  // Per-frame update hook.
   update() {
     // Game loop updates will go here.
   }
+  //#endregion
 
+  //#region UI
+  // Update buttons and labels based on state.
   updateUI() {
     if (this.ui && this.ui.ovenButton) {
       this.ui.ovenButton.setEnabled(this.isPizzaOnBench);
@@ -142,6 +151,7 @@ class KitchenScene extends Phaser.Scene {
       this.ui.scoreLabel.setVisible(true);
     }
   }
+  //#endregion
 
   //#region Sauce and sprinkle painting
   // Sauce painting input and cursor management.
@@ -284,6 +294,7 @@ class KitchenScene extends Phaser.Scene {
     });
   }
 
+  // Clear sauce selection and cursor.
   deactivateSauce() {
     if (!this.sauceActive) {
       return;
@@ -396,6 +407,7 @@ class KitchenScene extends Phaser.Scene {
     return Phaser.Geom.Ellipse.Contains(ellipse, x, y);
   }
 
+  // Get the current ladle tip position.
   getLadleTip() {
     return {
       x: this.ladleCursor.x,
@@ -403,6 +415,7 @@ class KitchenScene extends Phaser.Scene {
     };
   }
 
+  // Get the current sprinkle tip position.
   getSprinkleTip() {
     return {
       x: this.sprinkleCursor.x,
@@ -500,6 +513,8 @@ class KitchenScene extends Phaser.Scene {
   }
 //#endregion
 
+  //#region Scoring
+  // Reset per-pizza state while preserving running score.
   resetPizzaState() {
     const runningScore = (GameState.madePizza && GameState.madePizza.score) || 0;
     GameState.madePizza = {
@@ -513,6 +528,7 @@ class KitchenScene extends Phaser.Scene {
     };
   }
 
+  // Track a topping added to the pizza.
   registerIngredient(name) {
     if (!name || !GameState.madePizza) {
       return;
@@ -520,6 +536,7 @@ class KitchenScene extends Phaser.Scene {
     GameState.madePizza.ingredients.add(name);
   }
 
+  // Calculate the earned score for the current pizza.
   calculatePizzaScore() {
     const order = (GameState.currentOrder && GameState.currentOrder.ingredients) || [];
     const orderSet = new Set(order);
@@ -535,8 +552,10 @@ class KitchenScene extends Phaser.Scene {
     const rawScore = correct * 10;
     GameState.madePizza.score = Math.max(0, rawScore);
   }
+  //#endregion
 
   //#region Pizza cutter
+  // Create the cutter tool prop.
   createCutterTool() {
     const targetWidth = 140;
     const tool = this.add.image(1160, 610, "cutter_tool");
@@ -552,6 +571,7 @@ class KitchenScene extends Phaser.Scene {
     return tool;
   }
 
+  // Create the cutter cursor that follows the pointer.
   createCutterCursor() {
     const targetWidth = 140;
     const cursor = this.add.image(0, 0, "cutter_tool");
@@ -563,6 +583,7 @@ class KitchenScene extends Phaser.Scene {
     return cursor;
   }
 
+  // Wire up cutter input handlers.
   setupCutterInput() {
     this.input.on("pointermove", (pointer) => {
       if (!this.cutterPickedUp) {
@@ -603,6 +624,7 @@ class KitchenScene extends Phaser.Scene {
     });
   }
 
+  // Pick up the cutter tool and switch to cursor mode.
   pickUpCutter(pointer) {
     if (!this.cutterTool || !this.cutterTool.visible) {
       return;
@@ -618,6 +640,7 @@ class KitchenScene extends Phaser.Scene {
     this.ui.root.bringToTop(this.cutterCursor);
   }
 
+  // Show the cutter tool when ready.
   showCutterTool() {
     if (!this.cutterTool || this.cutterPickedUp) {
       return;
@@ -628,6 +651,7 @@ class KitchenScene extends Phaser.Scene {
     this.ui.root.bringToTop(this.cutterTool);
   }
 
+  // Create slice guide overlays.
   createCutGuides() {
     const angles = [Math.PI / 2, Math.PI / 6, -Math.PI / 6];
     return angles.map((angle) => {
@@ -639,6 +663,7 @@ class KitchenScene extends Phaser.Scene {
     });
   }
 
+  // Position guides based on the returned pizza location.
   updateCutGuideLayout() {
     if (!this.returnedPizza || !this.returnedDough) {
       return;
@@ -660,6 +685,7 @@ class KitchenScene extends Phaser.Scene {
     });
   }
 
+  // Show a single guide based on selection.
   showCutGuide(index) {
     if (index === -1 || !this.cutGuides[index] || !this.cutGuides[index].available) {
       this.hideCutGuides();
@@ -677,6 +703,7 @@ class KitchenScene extends Phaser.Scene {
     });
   }
 
+  // Hide non-used guides.
   hideCutGuides() {
     this.cutGuides.forEach((entry) => {
       if (!entry.used) {
@@ -685,6 +712,7 @@ class KitchenScene extends Phaser.Scene {
     });
   }
 
+  // Pick the closest cut guide based on cursor angle.
   pickCutGuideIndex(x, y) {
     const centerX = this.returnedPizza.x + this.returnedDough.x;
     const centerY = this.returnedPizza.y + this.returnedDough.y;
@@ -711,6 +739,7 @@ class KitchenScene extends Phaser.Scene {
     return bestIndex;
   }
 
+  // Hit test the returned pizza ellipse.
   isPointerOnReturnedPizza(x, y) {
     if (!this.returnedPizza || !this.returnedDough) {
       return false;
@@ -723,6 +752,7 @@ class KitchenScene extends Phaser.Scene {
     return Phaser.Geom.Ellipse.Contains(ellipse, x, y);
   }
 
+  // Draw a dashed line for a guide.
   drawDashedLine(graphics, length, dashLength, gapLength) {
     const half = length * 0.5;
     let x = -half;
@@ -736,10 +766,12 @@ class KitchenScene extends Phaser.Scene {
     graphics.strokePath();
   }
 
+  // Draw a solid line for a guide.
   drawSolidLine(graphics, length) {
     graphics.strokeLineShape(new Phaser.Geom.Line(-length / 2, 0, length / 2, 0));
   }
 
+  // Compute the visible guide length based on pizza ellipse.
   getGuideLength(angle) {
     const rx = this.returnedDough.displayWidth * 0.48;
     const ry = this.returnedDough.displayHeight * 0.32;
@@ -752,6 +784,7 @@ class KitchenScene extends Phaser.Scene {
     return (2 / denom) * 0.9;
   }
 
+  // Mark a guide as used after cutting.
   markGuideUsed(index) {
     const entry = this.cutGuides[index];
     if (!entry || entry.used) {
@@ -768,6 +801,7 @@ class KitchenScene extends Phaser.Scene {
     this.ui.root.bringToTop(entry.guide);
   }
 
+  // Animate the cutter across a guide line.
   playCutAnimation(index) {
     const entry = this.cutGuides[index];
     if (!entry || entry.used || !this.returnedPizza || !this.returnedDough) {
@@ -817,6 +851,8 @@ class KitchenScene extends Phaser.Scene {
 
   //#endregion
 
+  //#region Input helpers
+  // Handle cursor visibility when hovering UI elements.
   attachHoverCursorReset(target) {
     target.on("pointerover", () => {
       if (!this.sauceActive && !this.sprinkleActive) {
@@ -847,9 +883,9 @@ class KitchenScene extends Phaser.Scene {
       }
     });
   }
+  //#endregion
 
   //#region Oven animation
-
   // Capture a snapshot of the pizza on the conveyor belt.
   captureBeltPizzaSnapshot(beltPizza, rawDough) {
     if (!beltPizza || !GameState.madePizza) {
