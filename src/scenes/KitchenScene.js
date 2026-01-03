@@ -1,4 +1,4 @@
-import { GAME_WIDTH } from "../constants.js";
+import { GAME_WIDTH, INGREDIENTS } from "../constants.js";
 import { GameState } from "../state.js";
 import { AudioManager } from "../audio/AudioManager.js";
 import { createButton } from "../ui/UIButton.js";
@@ -27,9 +27,11 @@ class KitchenScene extends Phaser.Scene {
     });
     this.load.image("dough_base", "assets/ingredients/dough.png");
     this.load.image("dough_baked", "assets/ingredients/dough-baked.png");
-    this.load.image("ladle_cursor", "assets/ingredients/sauce_cursor.png");
-    this.load.image("cheese_cursor", "assets/ingredients/cheese_cursor.png");
-    this.load.image("olives_cursor", "assets/ingredients/olives_cursor.png");
+    this.load.image("sauce_cursor", "assets/ingredients/sauce_cursor.png");
+    this.load.spritesheet("cursors-sprite", "assets/ingredients/cursors-sprite.png", {
+      frameWidth: 265,
+      frameHeight: 110,
+    });
     this.load.spritesheet("sprinkle-sprite", "assets/ingredients/sprinkle-sprite.png", {
       frameWidth: 190,
       frameHeight: 90,
@@ -52,16 +54,36 @@ class KitchenScene extends Phaser.Scene {
     // draw bowls
     const bowlY = 507;
     const bowlX = 110;
-    const bowlKeys = ["bowl_sauce", "bowl_cheese", "bowl_olives"];
-    const bowlFrames = bowlKeys.map((_, index) => frameIndex(0, index));
+    const ingredients = GameState.enabledIngredients || [];
+    const bowlFrames = ingredients.map((ingredient) => {
+      const ingredientIndex = INGREDIENTS.indexOf(ingredient);
+      if (ingredientIndex < 0) {
+        return null;
+      }
+      const row = Math.floor(ingredientIndex / 4);
+      const col = ingredientIndex % 4;
+      return frameIndex(row, col);
+    });
     const bowlSize = 160;
+    const bowlheight = 120;
     const bowlIcons = {};
 
-    bowlKeys.forEach((key, index) => {
-      const icon = this.add.image(bowlX + bowlSize * index, bowlY, "bowls-sprite", bowlFrames[index]);
+    ingredients.forEach((ingredient, index) => {
+      const col = index % 3;
+      const row = Math.floor(index / 3);
+      const frame = bowlFrames[index];
+      if (frame === null || frame === undefined) {
+        return;
+      }
+      const icon = this.add.image(
+        bowlX + bowlSize * col,
+        bowlY + bowlheight * row,
+        "bowls-sprite",
+        frame
+      );
       icon.setScale(bowlSize / icon.width);
       uiRoot.add(icon);
-      bowlIcons[key] = icon;
+      bowlIcons[ingredient] = icon;
       this.attachHoverCursorReset(icon);
     });
 
@@ -75,7 +97,7 @@ class KitchenScene extends Phaser.Scene {
     this.dough = dough;
 
     this.doughBounds = this.getSauceBounds(dough);
-    this.setupSprinkleInteractions(uiRoot, bowlIcons);
+    this.setupSprinkleInteractions(uiRoot, bowlIcons, ingredients);
 
     this.scale.on("resize", () => {
       this.doughBounds = this.getSauceBounds(this.dough);
@@ -157,40 +179,47 @@ class KitchenScene extends Phaser.Scene {
 
   //#region Sauce and sprinkle painting
   // Generic sprinkle setup for ingredients
-  setupSprinkleInteractions(uiRoot, bowlIcons) {
+  setupSprinkleInteractions(uiRoot, bowlIcons, ingredients) {
     this.sprinkleActive = false;
     this.sprinklePainting = false;
     this.sprinkleIconRef = null;
     this.sprinkleConfig = null;
     this.lastSprinkleStampTime = 0;
-    this.sprinkleCursor = this.createSprinkleCursor(uiRoot, "cheese_cursor", 60);
+    this.sprinkleCursor = this.createSprinkleCursor(uiRoot, "sauce_cursor", null, 60);
 
-    this.sprinkleConfigs = [
-      {
-        icon: bowlIcons["bowl_sauce"],
-        ingredient: "sauce",
-        cursorKey: "ladle_cursor",
-        cursorWidth: 140,
-        sprinkleFrames: [frameIndex(0, 0), frameIndex(0, 1), frameIndex(0, 2), frameIndex(0, 3)],
-        sprinkleWidth: 90,
-      },
-      {
-        icon: bowlIcons["bowl_cheese"],
-        ingredient: "cheese",
-        cursorKey: "cheese_cursor",
-        cursorWidth: 120,
-        sprinkleFrames: [frameIndex(1, 0), frameIndex(1, 1), frameIndex(1, 2), frameIndex(1, 3)],
-        sprinkleWidth: 80,
-      },
-      {
-        icon: bowlIcons["bowl_olives"],
-        ingredient: "olives",
-        cursorKey: "olives_cursor",
-        cursorWidth: 120,
-        sprinkleFrames: [frameIndex(2, 0), frameIndex(2, 1), frameIndex(2, 2), frameIndex(2, 3)],
-        sprinkleWidth: 80,
-      },
-    ];
+    this.sprinkleConfigs = ingredients
+      .map((ingredient, index) => {
+        const icon = bowlIcons[ingredient];
+        if (!icon) {
+          return null;
+        }
+        const ingredientIndex = INGREDIENTS.indexOf(ingredient);
+        if (ingredientIndex < 0) {
+          return null;
+        }
+        const isPrimary = index === 0;
+        const cursorKey = isPrimary ? "sauce_cursor" : "cursors-sprite";
+        const cursorRow = Math.floor(ingredientIndex / 3);
+        const cursorCol = ingredientIndex % 3;
+        const cursorFrame = isPrimary ? null : frameIndex(cursorRow, cursorCol, 3)-1;
+        const cursorWidth = isPrimary ? 140 : 120;
+        const sprinkleWidth = isPrimary ? 90 : 80;
+        return {
+          icon,
+          ingredient,
+          cursorKey,
+          cursorFrame,
+          cursorWidth,
+          sprinkleFrames: [
+            frameIndex(ingredientIndex, 0),
+            frameIndex(ingredientIndex, 1),
+            frameIndex(ingredientIndex, 2),
+            frameIndex(ingredientIndex, 3),
+          ],
+          sprinkleWidth,
+        };
+      })
+      .filter(Boolean);
 
     this.sprinkleConfigs.forEach((config) => {
       config.icon.setInteractive({ useHandCursor: true });
@@ -253,6 +282,9 @@ class KitchenScene extends Phaser.Scene {
     config.icon.setTint(0xffe27a);
     this.input.setDefaultCursor("none");
     this.sprinkleCursor.setTexture(config.cursorKey);
+    if (typeof config.cursorFrame === "number") {
+      this.sprinkleCursor.setFrame(config.cursorFrame);
+    }
     this.sprinkleCursor.setScale(config.cursorWidth / this.sprinkleCursor.width);
     this.sprinkleCursor.setVisible(true);
     const local = this.toUiLocal(this.ui.root, pointer);
@@ -277,8 +309,8 @@ class KitchenScene extends Phaser.Scene {
   }
 
   // Custom cursor for sprinkle ingredients.
-  createSprinkleCursor(uiRoot, textureKey, targetWidth) {
-    const bunch = this.add.image(0, 0, textureKey);
+  createSprinkleCursor(uiRoot, textureKey, frame, targetWidth) {
+    const bunch = this.add.image(0, 0, textureKey, frame);
     bunch.setOrigin(0, 1);
     bunch.setScale(targetWidth / bunch.width);
     bunch.setVisible(false);

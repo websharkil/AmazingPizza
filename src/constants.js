@@ -8,12 +8,10 @@ export const INGREDIENTS = [
   "mushrooms",
   "pepperoni",
   "peppers",
-  "onions",
+/*  "onions",
   "spinach",
-  "pineapple"
+  "pineapple"*/
 ];
-
-export const ENABLED_INGREDIENTS = ["sauce", "cheese", "olives"];
 
 export const INGREDIENT_COLORS = {
   olives: 0x414363,

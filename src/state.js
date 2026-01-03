@@ -10,6 +10,7 @@ export const GameState = {
     snapshotKey: null,
     snapshotSize: null,
   },
+  enabledIngredients: ["sauce", "cheese"],
   audio: {
     musicEnabled: true,
     sfxEnabled: true,

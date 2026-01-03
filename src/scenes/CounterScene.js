@@ -1,4 +1,4 @@
-import { ENABLED_INGREDIENTS, GAME_HEIGHT, GAME_WIDTH, INGREDIENT_COLORS } from "../constants.js";
+import { GAME_HEIGHT, GAME_WIDTH, INGREDIENT_COLORS, INGREDIENTS } from "../constants.js";
 import { GameState } from "../state.js";
 import { AudioManager } from "../audio/AudioManager.js";
 import { createButton } from "../ui/UIButton.js";
@@ -72,7 +72,25 @@ function applyOrderResult(customer, customerRow, order, madePizza) {
   const runningScore = (GameState.madePizza && GameState.madePizza.score) || 0;
   GameState.madePizza.score = runningScore + earned;
   GameState.pizzasMade += 1;
+  unlockIngredientsForScore(GameState.madePizza.score);
   return correct;
+}
+
+// Unlock new ingredients every 60 points.
+function unlockIngredientsForScore(score) {
+  const enabled = GameState.enabledIngredients || [];
+  const targetCount = Math.min(INGREDIENTS.length, 2 + Math.floor(score / 60));
+  if (enabled.length >= targetCount) {
+    GameState.enabledIngredients = enabled;
+    return;
+  }
+  const remaining = INGREDIENTS.filter((ingredient) => !enabled.includes(ingredient));
+  while (enabled.length < targetCount && remaining.length > 0) {
+    const pick = Phaser.Utils.Array.GetRandom(remaining);
+    enabled.push(pick);
+    remaining.splice(remaining.indexOf(pick), 1);
+  }
+  GameState.enabledIngredients = enabled;
 }
 
 // Position the speech bubble relative to the customer.
@@ -510,7 +528,7 @@ class CounterScene extends Phaser.Scene {
   // Random order of 1-4 ingredients.
   getRandomOrder() {
     const count = Phaser.Math.Between(1, 4);
-    const pool = Phaser.Utils.Array.Shuffle([...ENABLED_INGREDIENTS]);
+    const pool = Phaser.Utils.Array.Shuffle([...(GameState.enabledIngredients || [])]);
     return pool.slice(0, count);
   }
 
