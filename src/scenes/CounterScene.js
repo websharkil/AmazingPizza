@@ -98,8 +98,8 @@ class CounterScene extends Phaser.Scene {
   // Load scene assets.
   preload() {
     this.load.image("counter_bg", "assets/bg/counter_bg.png");
-    //this.load.audio("doorbell", "assets/sounds/doorbell.mp3");
     this.load.audio("swoosh", "assets/sounds/swoosh.mp3");
+    this.load.audio("yay", "assets/sounds/yay.mp3");
     this.load.spritesheet("customers", "assets/customers/customers-sprite.png", {
       frameWidth: 280,
       frameHeight: 360,
@@ -257,6 +257,9 @@ class CounterScene extends Phaser.Scene {
       resultShown = true;
       const correct = applyOrderResult(customer, customerRow, this.currentOrder, GameState.madePizza);
       const message = correct ? "YAY!" : "Oh no! I wanted ";
+      if (correct) {
+        AudioManager.playSfx("yay");
+      }
       if (resultBubble) {
         resultBubble.destroy();
       }

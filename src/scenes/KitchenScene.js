@@ -75,7 +75,6 @@ class KitchenScene extends Phaser.Scene {
     this.dough = dough;
 
     this.doughBounds = this.getSauceBounds(dough);
-    this.setupSauceInteraction(uiRoot, dough, bowlIcons["bowl_sauce"]);
     this.setupSprinkleInteractions(uiRoot, bowlIcons);
 
     this.scale.on("resize", () => {
@@ -157,70 +156,6 @@ class KitchenScene extends Phaser.Scene {
   //#endregion
 
   //#region Sauce and sprinkle painting
-  // Sauce painting input and cursor management.
-  setupSauceInteraction(uiRoot, dough, sauceIcon) {
-    this.sauceActive = false;
-    this.saucePainting = false;
-    this.sauceBlobSize = 36;
-    this.sauceIconRef = sauceIcon;
-
-    this.sauceLayers = this.createSauceLayers(dough);
-    this.sauceLayerIndex = 0;
-    this.sauceStamp = this.make.graphics({ x: 0, y: 0, add: false });
-    this.ladleCursor = this.createLadleCursor(uiRoot);
-
-    sauceIcon.setInteractive({ useHandCursor: true });
-    sauceIcon.on("pointerdown", (pointer) => {
-      if (!this.isPizzaOnBench) {
-        return;
-      }
-      if (this.sauceActive) {
-        this.deactivateSauce();
-        return;
-      }
-
-      this.deactivateSprinkle();
-      this.sauceActive = true;
-      sauceIcon.setTint(0xffe27a);
-      this.input.setDefaultCursor("none");
-      this.ladleCursor.setVisible(true);
-      const local = this.toUiLocal(uiRoot, pointer);
-      this.ladleCursor.setPosition(local.x, local.y);
-      this.ui.root.bringToTop(this.ladleCursor);
-    });
-
-    this.input.on("pointerdown", (pointer) => {
-      if (!this.sauceActive || !this.isPizzaOnBench) {
-        return;
-      }
-      const local = this.toUiLocal(uiRoot, pointer);
-      this.ladleCursor.setPosition(local.x, local.y);
-      this.ui.root.bringToTop(this.ladleCursor);
-      const tip = this.getLadleTip();
-      if (this.isOnDough(tip.x, tip.y)) {
-        this.saucePainting = true;
-        this.stampSauce(tip.x, tip.y, dough);
-      }
-    });
-
-    this.input.on("pointermove", (pointer) => {
-      if (!this.sauceActive || !this.isPizzaOnBench) {
-        return;
-      }
-      const local = this.toUiLocal(uiRoot, pointer);
-      this.ladleCursor.setPosition(local.x, local.y);
-      this.ui.root.bringToTop(this.ladleCursor);
-      const tip = this.getLadleTip();
-      if (this.saucePainting && pointer.isDown && this.isOnDough(tip.x, tip.y)) {
-        this.stampSauce(tip.x, tip.y, dough);
-      }
-    });
-
-    this.input.on("pointerup", () => {
-      this.saucePainting = false;
-    });
-  }
-
   // Generic sprinkle setup for ingredients
   setupSprinkleInteractions(uiRoot, bowlIcons) {
     this.sprinkleActive = false;
@@ -232,11 +167,19 @@ class KitchenScene extends Phaser.Scene {
 
     this.sprinkleConfigs = [
       {
+        icon: bowlIcons["bowl_sauce"],
+        ingredient: "sauce",
+        cursorKey: "ladle_cursor",
+        cursorWidth: 140,
+        sprinkleFrames: [frameIndex(0, 0), frameIndex(0, 1), frameIndex(0, 2), frameIndex(0, 3)],
+        sprinkleWidth: 90,
+      },
+      {
         icon: bowlIcons["bowl_cheese"],
         ingredient: "cheese",
         cursorKey: "cheese_cursor",
         cursorWidth: 120,
-        sprinkleFrames: [frameIndex(0, 0), frameIndex(0, 1), frameIndex(0, 2), frameIndex(0, 3)],
+        sprinkleFrames: [frameIndex(1, 0), frameIndex(1, 1), frameIndex(1, 2), frameIndex(1, 3)],
         sprinkleWidth: 80,
       },
       {
@@ -244,7 +187,7 @@ class KitchenScene extends Phaser.Scene {
         ingredient: "olives",
         cursorKey: "olives_cursor",
         cursorWidth: 120,
-        sprinkleFrames: [frameIndex(1, 0), frameIndex(1, 1), frameIndex(1, 2), frameIndex(1, 3)],
+        sprinkleFrames: [frameIndex(2, 0), frameIndex(2, 1), frameIndex(2, 2), frameIndex(2, 3)],
         sprinkleWidth: 80,
       },
     ];
@@ -260,7 +203,6 @@ class KitchenScene extends Phaser.Scene {
           return;
         }
 
-        this.deactivateSauce();
         this.activateSprinkle(config, pointer);
       });
     });
@@ -295,25 +237,6 @@ class KitchenScene extends Phaser.Scene {
     this.input.on("pointerup", () => {
       this.sprinklePainting = false;
     });
-  }
-
-  // Clear sauce selection and cursor.
-  deactivateSauce() {
-    if (!this.sauceActive) {
-      return;
-    }
-    this.sauceActive = false;
-    this.saucePainting = false;
-    if (this.sauceIconRef) {
-      this.sauceIconRef.clearTint();
-    }
-    if (this.sprinkleIconRef) {
-      this.sprinkleIconRef.clearTint();
-    }
-    this.input.setDefaultCursor("default");
-    if (this.ladleCursor) {
-      this.ladleCursor.setVisible(false);
-    }
   }
 
   // Activate a selected bowl
@@ -353,34 +276,6 @@ class KitchenScene extends Phaser.Scene {
     }
   }
 
-  // Render texture layers for sauce buildup.
-  createSauceLayers(dough) {
-    const size = Math.max(dough.displayWidth, dough.displayHeight);
-    const alphas = [0.4, 0.6, 0.8];
-    const layers = [];
-
-    alphas.forEach((alpha) => {
-      const layer = this.add.renderTexture(dough.x, dough.y, size, size);
-      layer.setOrigin(0.5, 0.5);
-      layer.setAlpha(alpha);
-      this.pizzaContainer.add(layer);
-      layers.push(layer);
-    });
-
-    return layers;
-  }
-
-  // Custom cursor for sauce ladle.
-  createLadleCursor(uiRoot) {
-    const ladle = this.add.image(0, 0, "ladle_cursor");
-    ladle.setOrigin(0, 1);
-    ladle.setScale(0.8);
-    ladle.setVisible(false);
-    ladle.setDepth(1000);
-    uiRoot.add(ladle);
-    return ladle;
-  }
-
   // Custom cursor for sprinkle ingredients.
   createSprinkleCursor(uiRoot, textureKey, targetWidth) {
     const bunch = this.add.image(0, 0, textureKey);
@@ -410,14 +305,6 @@ class KitchenScene extends Phaser.Scene {
     return Phaser.Geom.Ellipse.Contains(ellipse, x, y);
   }
 
-  // Get the current ladle tip position.
-  getLadleTip() {
-    return {
-      x: this.ladleCursor.x,
-      y: this.ladleCursor.y,
-    };
-  }
-
   // Get the current sprinkle tip position.
   getSprinkleTip() {
     return {
@@ -441,33 +328,6 @@ class KitchenScene extends Phaser.Scene {
     };
   }
 
-  // Stamp sauce texture for a thicker spread look.
-  stampSauce(x, y, dough) {
-    const size = Math.max(dough.displayWidth, dough.displayHeight);
-    const originX = dough.x - size * 0.5;
-    const originY = dough.y - size * 0.5;
-    const localX = x - originX;
-    const localY = y - originY;
-
-    const baseSize = this.sauceBlobSize;
-    const stampW = baseSize * Phaser.Math.FloatBetween(0.7, 1.2);
-    const stampH = baseSize * Phaser.Math.FloatBetween(0.7, 1.2);
-    const drawX = localX - stampW * 0.5;
-    const drawY = localY - stampH * 0.5;
-
-    const stamp = this.sauceStamp;
-    stamp.clear();
-    stamp.fillStyle(this.randomizedSauceColor(), 1);
-    stamp.fillEllipse(stampW * 0.5, stampH * 0.5, stampW, stampH);
-    this.addHerbSpeckles(stamp, stampW, stampH);
-
-    const layer = this.sauceLayers[this.sauceLayerIndex];
-    this.pizzaContainer.bringToTop(layer);
-    layer.draw(stamp, drawX, drawY);
-    this.sauceLayerIndex = (this.sauceLayerIndex + 1) % this.sauceLayers.length;
-    this.registerIngredient("sauce");
-  }
-
   // Drop a random sprinkle image at the cursor tip.
   stampSprinkle(x, y) {
     const now = this.time.now;
@@ -487,33 +347,6 @@ class KitchenScene extends Phaser.Scene {
     }
   }
 
-  // Slightly vary sauce color for a natural look.
-  randomizedSauceColor() {
-    const base = Phaser.Display.Color.IntegerToColor(0xb3261e);
-    const variance = 18;
-    const r = Phaser.Math.Clamp(base.red + Phaser.Math.Between(-variance, variance), 0, 255);
-    const g = Phaser.Math.Clamp(base.green + Phaser.Math.Between(-variance, variance), 0, 255);
-    const b = Phaser.Math.Clamp(base.blue + Phaser.Math.Between(-variance, variance), 0, 255);
-    return Phaser.Display.Color.GetColor(r, g, b);
-  }
-
-  // Add tiny herb speckles to sauce stamps.
-  addHerbSpeckles(stamp, width, height) {
-    const rx = width * 0.5;
-    const ry = height * 0.5;
-    const colors = [0x2f5d34, 0x4f7a3a, 0x6b4a2b, 0x3f3a2a];
-    const speckCount = Phaser.Math.Between(4, 7);
-
-    for (let i = 0; i < speckCount; i += 1) {
-      const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
-      const radius = Math.sqrt(Math.random());
-      const sx = width * 0.5 + Math.cos(angle) * rx * radius;
-      const sy = height * 0.5 + Math.sin(angle) * ry * radius;
-      const size = Phaser.Math.FloatBetween(1, 2.2);
-      stamp.fillStyle(colors[Phaser.Math.Between(0, colors.length - 1)], 0.6);
-      stamp.fillCircle(sx, sy, size);
-    }
-  }
 //#endregion
 
   //#region Scoring
@@ -802,6 +635,26 @@ class KitchenScene extends Phaser.Scene {
     entry.guide.setRotation(entry.angle);
     entry.guide.setVisible(true);
     this.ui.root.bringToTop(entry.guide);
+
+    const usedCount = this.cutGuides.filter((guideEntry) => guideEntry.used).length;
+    if (usedCount >= 3) {
+      this.finishCutting();
+    }
+  }
+
+  // Return the cutter to its resting state after all cuts.
+  finishCutting() {
+    this.cutterPickedUp = false;
+    this.input.setDefaultCursor("default");
+    if (this.cutterCursor) {
+      this.cutterCursor.setVisible(false);
+    }
+    if (this.cutterTool) {
+      this.cutterTool.setVisible(true);
+      this.cutterTool.setActive(true);
+      this.cutterTool.setInteractive({ useHandCursor: true });
+      this.ui.root.bringToTop(this.cutterTool);
+    }
   }
 
   // Animate the cutter across a guide line.
@@ -858,26 +711,16 @@ class KitchenScene extends Phaser.Scene {
   // Handle cursor visibility when hovering UI elements.
   attachHoverCursorReset(target) {
     target.on("pointerover", () => {
-      if (!this.sauceActive && !this.sprinkleActive) {
+      if (!this.sprinkleActive) {
         return;
       }
       this.input.setDefaultCursor("default");
-      if (this.ladleCursor) {
-        this.ladleCursor.setVisible(false);
-      }
       if (this.sprinkleCursor) {
         this.sprinkleCursor.setVisible(false);
       }
     });
 
     target.on("pointerout", () => {
-      if (this.sauceActive) {
-        this.input.setDefaultCursor("none");
-        if (this.ladleCursor) {
-          this.ladleCursor.setVisible(true);
-        }
-        return;
-      }
       if (this.sprinkleActive) {
         this.input.setDefaultCursor("none");
         if (this.sprinkleCursor) {
@@ -985,7 +828,6 @@ class KitchenScene extends Phaser.Scene {
     }
     this.isPizzaOnBench = false;
     this.isServeReady = false;
-    this.deactivateSauce();
     this.deactivateSprinkle();
     this.updateUI();
 
