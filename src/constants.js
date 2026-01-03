@@ -1,5 +1,6 @@
 export const GAME_WIDTH = 1024;
 export const GAME_HEIGHT = 768;
+export const INGREDIENT_UNLOCK_POINTS = 60;
 
 export const INGREDIENTS = [
   "sauce",
