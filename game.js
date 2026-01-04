@@ -15,4 +15,30 @@ const config = {
   scene: [CounterScene, KitchenScene],
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+
+const isMobileOrTablet =
+  (typeof navigator !== "undefined" &&
+    /Mobi|Android|iPad|iPhone|iPod|Tablet|Silk|Kindle/i.test(navigator.userAgent)) ||
+  (typeof window !== "undefined" &&
+    window.matchMedia &&
+    window.matchMedia("(pointer: coarse)").matches);
+
+if (isMobileOrTablet && typeof document !== "undefined") {
+  const requestFullscreen = () => {
+    const target = document.documentElement;
+    if (document.fullscreenElement || !target || !target.requestFullscreen) {
+      return;
+    }
+    target.requestFullscreen().catch(() => {});
+  };
+
+  const handleFirstGesture = () => {
+    requestFullscreen();
+    window.removeEventListener("pointerdown", handleFirstGesture);
+    window.removeEventListener("touchend", handleFirstGesture);
+  };
+
+  window.addEventListener("pointerdown", handleFirstGesture, { once: true });
+  window.addEventListener("touchend", handleFirstGesture, { once: true });
+}
