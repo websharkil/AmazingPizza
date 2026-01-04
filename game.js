@@ -26,6 +26,10 @@ const isMobileOrTablet =
 
 if (isMobileOrTablet && typeof document !== "undefined") {
   const requestFullscreen = () => {
+    if (game.scale && game.scale.startFullscreen && !game.scale.isFullscreen) {
+      game.scale.startFullscreen();
+      return;
+    }
     const target = document.documentElement;
     if (document.fullscreenElement || !target || !target.requestFullscreen) {
       return;
@@ -35,10 +39,20 @@ if (isMobileOrTablet && typeof document !== "undefined") {
 
   const handleFirstGesture = () => {
     requestFullscreen();
-    window.removeEventListener("pointerdown", handleFirstGesture);
-    window.removeEventListener("touchend", handleFirstGesture);
   };
 
-  window.addEventListener("pointerdown", handleFirstGesture, { once: true });
-  window.addEventListener("touchend", handleFirstGesture, { once: true });
+  const attachGestureHandler = () => {
+    if (game.canvas) {
+      game.canvas.addEventListener("pointerdown", handleFirstGesture, { once: true });
+      game.canvas.addEventListener("touchend", handleFirstGesture, { once: true });
+      return true;
+    }
+    return false;
+  };
+
+  if (!attachGestureHandler()) {
+    game.events.once("ready", () => {
+      attachGestureHandler();
+    });
+  }
 }
